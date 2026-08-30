@@ -141,6 +141,35 @@ describe("D3 API V1", () => {
     expect(completed.body.order.paymentState).toBe("PAID_OFFLINE");
     expect(completed.body.order.fulfillmentState).toBe("COMPLETED");
   });
+
+  it("invalidates a customer session when they scan a different table QR", async () => {
+    const server = createTestServer();
+    const agent = request.agent(server.app);
+
+    await authenticateCustomer(server, agent);
+
+    const otherTable = server.database
+      .prepare("INSERT INTO dining_tables (label) VALUES (?)")
+      .run("Table 9");
+    const otherTableId = Number(otherTable.lastInsertRowid);
+    const otherQrId = "table-9";
+
+    server.database
+      .prepare("INSERT INTO table_qr_codes (qr_identifier, dining_table_id) VALUES (?, ?)")
+      .run(otherQrId, otherTableId);
+
+    await agent
+      .post("/api/qr/validate")
+      .send({ qrId: otherQrId, signature: signQrId(otherQrId, server.config.qrSecret) })
+      .expect(200);
+
+    await agent.get("/api/auth/customer/session").expect(401);
+
+    await agent
+      .post("/api/auth/customer/request-otp")
+      .send({ name: "Asha", mobileNumber: "+919876543210" })
+      .expect(200);
+  });
 });
 
 function createTestServer(): TestServer {
