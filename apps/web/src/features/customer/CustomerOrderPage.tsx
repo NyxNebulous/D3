@@ -405,10 +405,8 @@ export function CustomerOrderPage({ qrId, signature }: CustomerOrderPageProps) {
           <section className="c-screen c-screen--home active">
             <div className="home-header">
               <div>
-                <div className="greeting">Hi! {session?.customer.name ?? "there"}</div>
-                <div className="greeting-sub">
-                  D3
-                </div>
+                <div className="greeting">Hi {session?.customer.name ?? "there"}</div>
+                <div className="c-topbar__sub">{customerTableText} · D3</div>
               </div>
               <div className="table-badge">{tableShortLabel}</div>
             </div>
@@ -572,7 +570,7 @@ export function CustomerOrderPage({ qrId, signature }: CustomerOrderPageProps) {
         {screen === "cart" ? (
           <section className="c-screen c-screen--cart active">
             <header className="c-topbar c-topbar--plain">
-              <span className="c-topbar__title">Your cart</span>
+              <span className="c-topbar__sub">Your cart</span>
               <span className="c-topbar__sub">
                 {cartCount} item{cartCount !== 1 ? "s" : ""}
               </span>
@@ -651,7 +649,7 @@ export function CustomerOrderPage({ qrId, signature }: CustomerOrderPageProps) {
         {screen === "orders" ? (
           <section className="c-screen c-screen--orders active">
             <header className="c-topbar c-topbar--plain">
-              <span className="c-topbar__title">Your orders</span>
+              <span className="c-topbar__sub">Your orders</span>
               <span className="c-topbar__sub">{customerTableText}</span>
             </header>
 
