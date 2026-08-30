@@ -2,14 +2,15 @@ import { useEffect, useMemo, useState, type FormEvent } from "react";
 import {
   Check,
   ChevronLeft,
-  LogOut,
   Pencil,
   Plus,
   RefreshCw,
+  Trash2,
   Wallet
 } from "lucide-react";
 import { formatInrFromPaise } from "@d3/shared";
 import {
+  apiDelete,
   apiGet,
   apiPatch,
   apiPost,
@@ -42,8 +43,8 @@ function formatPaymentState(state: string): string {
 
 function formatFulfillmentState(state: string): string {
   switch (state) {
-    case "PENDING": return "Pending";
-    case "COMPLETED": return "Complete";
+    case "PENDING": return "Preparing";
+    case "COMPLETED": return "Ready";
     default: return state;
   }
 }
@@ -53,7 +54,30 @@ function paymentBadgeClass(state: string): string {
 }
 
 function fulfillmentBadgeClass(state: string): string {
-  return state === "COMPLETED" ? "badge badge-completed" : "badge badge-pending";
+  return state === "COMPLETED" ? "badge badge-completed" : "badge badge-preparing";
+}
+
+function sortOrders(orders: Order[]): Order[] {
+  // Sort priority:
+  // 1. Unpaid + Pending (New / In Kitchen) - Top Priority
+  // 2. Unpaid + Completed (Ready, Awaiting Payment)
+  // 3. Paid + Pending (Paid, In Kitchen)
+  // 4. Paid + Completed (Fully Settled) - Bottom
+  return [...orders].sort((a, b) => {
+    const aSettled = a.paymentState === "PAID_OFFLINE" && a.fulfillmentState === "COMPLETED";
+    const bSettled = b.paymentState === "PAID_OFFLINE" && b.fulfillmentState === "COMPLETED";
+    if (aSettled !== bSettled) return aSettled ? 1 : -1;
+
+    const aPrepared = a.fulfillmentState === "COMPLETED";
+    const bPrepared = b.fulfillmentState === "COMPLETED";
+    if (aPrepared !== bPrepared) return aPrepared ? 1 : -1;
+
+    const aPaid = a.paymentState === "PAID_OFFLINE";
+    const bPaid = b.paymentState === "PAID_OFFLINE";
+    if (aPaid !== bPaid) return aPaid ? 1 : -1;
+
+    return b.id - a.id;
+  });
 }
 
 export function AdminPage() {
@@ -66,18 +90,51 @@ export function AdminPage() {
   const [selectedCategoryId, setSelectedCategoryId] = useState<number | null>(null);
   const [activeTab, setActiveTab] = useState<"orders" | "menu">("orders");
   const [showMobileDetail, setShowMobileDetail] = useState(false);
+
+  // Category state
   const [newCategoryName, setNewCategoryName] = useState("");
   const [showAddCatForm, setShowAddCatForm] = useState(false);
+  const [renamingCategory, setRenamingCategory] = useState<MenuCategory | null>(null);
+  const [renameCategoryValue, setRenameCategoryValue] = useState("");
+
+  // Item state
   const [newItem, setNewItem] = useState({ categoryId: "", name: "", price: "", isVeg: true });
   const [showAddItemForm, setShowAddItemForm] = useState(false);
   const [editingItem, setEditingItem] = useState<MenuItem | null>(null);
+
+  // Confirm delete modal state (replaces browser confirm dialog)
+  const [confirmDelete, setConfirmDelete] = useState<{
+    type: "category" | "item";
+    id: number;
+    name: string;
+  } | null>(null);
+
   const [busy, setBusy] = useState(false);
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const [notice, setNotice] = useState<NoticeState | null>(null);
 
-  const selectedOrder = useMemo(
-    () => orders.find((order) => order.id === selectedOrderId) ?? orders[0] ?? null,
-    [orders, selectedOrderId]
+  const toPrepareOrders = useMemo(
+    () => orders.filter((o) => o.fulfillmentState === "PENDING"),
+    [orders]
   );
+
+  const preparedOrders = useMemo(
+    () => orders.filter((o) => o.fulfillmentState === "COMPLETED" && o.paymentState === "UNPAID"),
+    [orders]
+  );
+
+  const completedOrders = useMemo(
+    () => orders.filter((o) => o.fulfillmentState === "COMPLETED" && o.paymentState === "PAID_OFFLINE"),
+    [orders]
+  );
+
+  const selectedOrder = useMemo(() => {
+    if (selectedOrderId) {
+      const found = orders.find((o) => o.id === selectedOrderId);
+      if (found) return found;
+    }
+    return toPrepareOrders[0] ?? preparedOrders[0] ?? completedOrders[0] ?? null;
+  }, [orders, selectedOrderId, toPrepareOrders, preparedOrders, completedOrders]);
 
   const selectedCategory =
     menu.find((category) => category.id === selectedCategoryId) ?? menu[0] ?? null;
@@ -96,6 +153,35 @@ export function AdminPage() {
     void boot();
   }, []);
 
+  // Auto-refresh orders every 30 seconds & on tab visibility change
+  useEffect(() => {
+    if (!staff) return;
+
+    async function silentSyncOrders() {
+      try {
+        const response = await apiGet<{ orders: Order[] }>("/api/admin/orders");
+        setOrders(response.orders);
+      } catch {
+        // Silent catch for background poll
+      }
+    }
+
+    const interval = setInterval(silentSyncOrders, 30000);
+
+    function handleVisibilityChange() {
+      if (document.visibilityState === "visible") {
+        void silentSyncOrders();
+      }
+    }
+
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  }, [staff]);
+
   useEffect(() => {
     if (!menu.length) return;
     setSelectedCategoryId((current) => current ?? menu[0]?.id ?? null);
@@ -110,6 +196,15 @@ export function AdminPage() {
     setOrders(ordersResponse.orders);
     setMenu(menuResponse.categories);
     setSelectedOrderId((current) => current ?? ordersResponse.orders[0]?.id ?? null);
+  }
+
+  async function handleManualRefresh() {
+    setIsRefreshing(true);
+    try {
+      await loadAdminData();
+    } finally {
+      setTimeout(() => setIsRefreshing(false), 500);
+    }
   }
 
   async function login(event: FormEvent<HTMLFormElement>) {
@@ -144,8 +239,8 @@ export function AdminPage() {
       setOrders((current) => current.map((order) => (order.id === response.order.id ? response.order : order)));
       setNotice({
         variant: "success",
-        title: "Offline payment recorded",
-        subtitle: "The order has been marked paid."
+        title: "Payment recorded",
+        subtitle: `${response.order.publicOrderNumber} marked as Paid.`
       });
     } catch (error) {
       setNotice({
@@ -158,7 +253,7 @@ export function AdminPage() {
     }
   }
 
-  async function markCompleted(orderId: number) {
+  async function markPrepared(orderId: number) {
     setBusy(true);
     setNotice(null);
 
@@ -167,14 +262,14 @@ export function AdminPage() {
       setOrders((current) => current.map((order) => (order.id === response.order.id ? response.order : order)));
       setNotice({
         variant: "success",
-        title: "Order completed",
-        subtitle: "The order is now marked complete."
+        title: "Order prepared",
+        subtitle: `${response.order.publicOrderNumber} is ready to serve.`
       });
     } catch (error) {
       setNotice({
         variant: "error",
-        title: "Completion failed",
-        subtitle: error instanceof Error ? error.message : "The order could not be marked complete."
+        title: "Status update failed",
+        subtitle: error instanceof Error ? error.message : "The order could not be marked prepared."
       });
     } finally {
       setBusy(false);
@@ -196,6 +291,55 @@ export function AdminPage() {
         variant: "error",
         title: "Category add failed",
         subtitle: error instanceof Error ? error.message : "The category could not be created."
+      });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function saveRenameCategory(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!renamingCategory) return;
+    setBusy(true);
+    setNotice(null);
+
+    try {
+      await apiPatch(`/api/admin/menu/categories/${renamingCategory.id}`, {
+        name: renameCategoryValue
+      });
+      setRenamingCategory(null);
+      await loadAdminData();
+    } catch (error) {
+      setNotice({
+        variant: "error",
+        title: "Rename failed",
+        subtitle: error instanceof Error ? error.message : "The category could not be renamed."
+      });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function deleteCategory(categoryId: number, categoryName: string) {
+    setBusy(true);
+    setNotice(null);
+
+    try {
+      await apiDelete(`/api/admin/menu/categories/${categoryId}`);
+      if (selectedCategoryId === categoryId) {
+        setSelectedCategoryId(null);
+      }
+      await loadAdminData();
+      setNotice({
+        variant: "success",
+        title: "Category deleted",
+        subtitle: `"${categoryName}" has been deleted.`
+      });
+    } catch (error) {
+      setNotice({
+        variant: "error",
+        title: "Delete failed",
+        subtitle: error instanceof Error ? error.message : "The category could not be deleted."
       });
     } finally {
       setBusy(false);
@@ -256,6 +400,29 @@ export function AdminPage() {
     }
   }
 
+  async function deleteItem(itemId: number, itemName: string) {
+    setBusy(true);
+    setNotice(null);
+
+    try {
+      await apiDelete(`/api/admin/menu/items/${itemId}`);
+      await loadAdminData();
+      setNotice({
+        variant: "success",
+        title: "Item deleted",
+        subtitle: `"${itemName}" has been deleted.`
+      });
+    } catch (error) {
+      setNotice({
+        variant: "error",
+        title: "Delete failed",
+        subtitle: error instanceof Error ? error.message : "The item could not be deleted."
+      });
+    } finally {
+      setBusy(false);
+    }
+  }
+
   /* ---- Login ---- */
   if (!staff) {
     return (
@@ -289,7 +456,6 @@ export function AdminPage() {
               />
             </div>
             <button className="btn-primary" disabled={busy} type="submit">
-              <LogOut aria-hidden="true" size={15} />
               Log in
             </button>
           </form>
@@ -306,7 +472,7 @@ export function AdminPage() {
   /* ---- Authenticated Admin ---- */
   return (
     <div className="admin-shell">
-      {/* Topbar */}
+      {/* Topbar: Balanced Brand on Left, Centered Tabs */}
       <header className="admin-topbar">
         <div className="brand-row">
           <div className="brand-mark sm">D3</div>
@@ -337,11 +503,7 @@ export function AdminPage() {
           </button>
         </div>
 
-        {/* Log out button — visual only for now */}
-        <button className="btn-outline" type="button" style={{ padding: "8px 14px", fontSize: "12.5px" }}>
-          <LogOut aria-hidden="true" size={14} />
-          Log out
-        </button>
+        <div className="admin-topbar__spacer" aria-hidden="true" />
       </header>
 
       {/* Orders Tab */}
@@ -353,10 +515,12 @@ export function AdminPage() {
               <h3>Orders ({orders.length})</h3>
               <button
                 className="refresh-btn"
-                onClick={() => void loadAdminData()}
+                disabled={isRefreshing}
+                onClick={() => void handleManualRefresh()}
+                title="Refresh orders list"
                 type="button"
               >
-                <RefreshCw aria-hidden="true" size={13} />
+                <RefreshCw aria-hidden="true" className={isRefreshing ? "spin" : ""} size={13} />
                 Refresh
               </button>
             </div>
@@ -367,28 +531,130 @@ export function AdminPage() {
                   No orders yet.
                 </div>
               ) : (
-                orders.map((order) => (
-                  <button
-                    key={order.id}
-                    className={`order-list-item${selectedOrder?.id === order.id ? " selected" : ""}`}
-                    onClick={() => {
-                      setSelectedOrderId(order.id);
-                      setShowMobileDetail(true);
-                    }}
-                    type="button"
-                  >
-                    <div className="order-list-item__top">
-                      <span>{order.publicOrderNumber}</span>
-                      <span>{formatInrFromPaise(order.totalPaise)}</span>
-                    </div>
-                    <div className="order-list-item__bottom">
-                      <span>
-                        {order.tableLabel} · {order.customerName}
-                      </span>
-                      <span>recently</span>
-                    </div>
-                  </button>
-                ))
+                <>
+                  {/* 1. To Prepare / In Kitchen */}
+                  <div className="order-section-header">
+                    <span>To Prepare</span>
+                    <span className="order-section-count order-section-count--ember">
+                      {toPrepareOrders.length}
+                    </span>
+                  </div>
+                  {toPrepareOrders.length > 0 ? (
+                    toPrepareOrders.map((order) => (
+                      <button
+                        key={order.id}
+                        className={`order-list-item${selectedOrder?.id === order.id ? " selected" : ""}`}
+                        onClick={() => {
+                          setSelectedOrderId(order.id);
+                          setShowMobileDetail(true);
+                        }}
+                        type="button"
+                      >
+                        <div className="order-list-item__top">
+                          <span className="order-list-item__id">{order.publicOrderNumber}</span>
+                          <span className="order-list-item__total">{formatInrFromPaise(order.totalPaise)}</span>
+                        </div>
+                        <div className="order-list-item__bottom">
+                          <span className="order-list-item__meta">
+                            {order.tableLabel} · {order.customerName}
+                          </span>
+                          <div className="order-list-item__badges">
+                            <span className={paymentBadgeClass(order.paymentState)}>
+                              {formatPaymentState(order.paymentState)}
+                            </span>
+                            <span className={fulfillmentBadgeClass(order.fulfillmentState)}>
+                              {formatFulfillmentState(order.fulfillmentState)}
+                            </span>
+                          </div>
+                        </div>
+                      </button>
+                    ))
+                  ) : (
+                    <div className="order-section-empty">All orders prepared</div>
+                  )}
+
+                  {/* 2. Prepared / Awaiting Payment */}
+                  <div className="order-section-header">
+                    <span>Prepared · Unpaid</span>
+                    <span className="order-section-count order-section-count--sage">
+                      {preparedOrders.length}
+                    </span>
+                  </div>
+                  {preparedOrders.length > 0 ? (
+                    preparedOrders.map((order) => (
+                      <button
+                        key={order.id}
+                        className={`order-list-item${selectedOrder?.id === order.id ? " selected" : ""}`}
+                        onClick={() => {
+                          setSelectedOrderId(order.id);
+                          setShowMobileDetail(true);
+                        }}
+                        type="button"
+                      >
+                        <div className="order-list-item__top">
+                          <span className="order-list-item__id">{order.publicOrderNumber}</span>
+                          <span className="order-list-item__total">{formatInrFromPaise(order.totalPaise)}</span>
+                        </div>
+                        <div className="order-list-item__bottom">
+                          <span className="order-list-item__meta">
+                            {order.tableLabel} · {order.customerName}
+                          </span>
+                          <div className="order-list-item__badges">
+                            <span className={paymentBadgeClass(order.paymentState)}>
+                              {formatPaymentState(order.paymentState)}
+                            </span>
+                            <span className={fulfillmentBadgeClass(order.fulfillmentState)}>
+                              {formatFulfillmentState(order.fulfillmentState)}
+                            </span>
+                          </div>
+                        </div>
+                      </button>
+                    ))
+                  ) : (
+                    <div className="order-section-empty">No orders awaiting payment</div>
+                  )}
+
+                  {/* 3. Completed / Paid */}
+                  <div className="order-section-header">
+                    <span>Completed</span>
+                    <span className="order-section-count order-section-count--clay">
+                      {completedOrders.length}
+                    </span>
+                  </div>
+                  {completedOrders.length > 0 ? (
+                    completedOrders.map((order) => (
+                      <button
+                        key={order.id}
+                        className={`order-list-item settled${selectedOrder?.id === order.id ? " selected" : ""}`}
+                        onClick={() => {
+                          setSelectedOrderId(order.id);
+                          setShowMobileDetail(true);
+                        }}
+                        type="button"
+                      >
+                        <div className="order-list-item__top">
+                          <span className="order-list-item__id">{order.publicOrderNumber}</span>
+                          <span className="order-list-item__total">{formatInrFromPaise(order.totalPaise)}</span>
+                        </div>
+                        <div className="order-list-item__bottom">
+                          <span className="order-list-item__meta">
+                            {order.tableLabel} · {order.customerName}
+                          </span>
+                          <div className="order-list-item__badges">
+                            <span className={paymentBadgeClass(order.paymentState)}>
+                              {formatPaymentState(order.paymentState)}
+                            </span>
+                            <span className={fulfillmentBadgeClass(order.fulfillmentState)}>
+                              {formatFulfillmentState(order.fulfillmentState)}
+                            </span>
+                          </div>
+                        </div>
+                      </button>
+                    ))
+                  ) : (
+                    <div className="order-section-empty">No completed orders yet</div>
+                  )}
+                </>
               )}
             </div>
           </aside>
@@ -437,7 +703,7 @@ export function AdminPage() {
                 <div className="detail-items-table">
                   {selectedOrder.items.map((item) => (
                     <div className="detail-item-row" key={item.id}>
-                      <span>
+                      <span className="detail-item-name">
                         {item.quantity} × {item.itemName}
                       </span>
                       <strong>{formatInrFromPaise(item.lineTotalPaise)}</strong>
@@ -450,25 +716,41 @@ export function AdminPage() {
                   <span>{formatInrFromPaise(selectedOrder.totalPaise)}</span>
                 </div>
 
+                {/* Independent Workflow Actions: Mark Prepared & Mark Paid */}
                 <div className="detail-actions">
-                  <button
-                    className="btn-sage"
-                    disabled={busy || selectedOrder.paymentState === "PAID_OFFLINE"}
-                    onClick={() => void markPaid(selectedOrder.id)}
-                    type="button"
-                  >
-                    <Wallet aria-hidden="true" size={14} />
-                    Mark paid
-                  </button>
-                  <button
-                    className="btn-outline"
-                    disabled={busy || selectedOrder.fulfillmentState === "COMPLETED"}
-                    onClick={() => void markCompleted(selectedOrder.id)}
-                    type="button"
-                  >
-                    <Check aria-hidden="true" size={14} />
-                    Mark complete
-                  </button>
+                  {selectedOrder.fulfillmentState === "PENDING" ? (
+                    <button
+                      className="btn-outline"
+                      disabled={busy}
+                      onClick={() => void markPrepared(selectedOrder.id)}
+                      type="button"
+                    >
+                      <Check aria-hidden="true" size={14} />
+                      Mark prepared
+                    </button>
+                  ) : (
+                    <button className="btn-outline btn-outline--done" disabled type="button">
+                      <Check aria-hidden="true" size={14} />
+                      Prepared ✓
+                    </button>
+                  )}
+
+                  {selectedOrder.paymentState === "UNPAID" ? (
+                    <button
+                      className="btn-sage"
+                      disabled={busy}
+                      onClick={() => void markPaid(selectedOrder.id)}
+                      type="button"
+                    >
+                      <Wallet aria-hidden="true" size={14} />
+                      Mark paid
+                    </button>
+                  ) : (
+                    <button className="btn-sage btn-sage--done" disabled type="button">
+                      <Wallet aria-hidden="true" size={14} />
+                      Paid ✓
+                    </button>
+                  )}
                 </div>
               </>
             ) : (
@@ -491,17 +773,46 @@ export function AdminPage() {
           <aside className="menu-sidebar">
             <div className="menu-sidebar__title">Categories</div>
 
-            {menu.map((category) => (
-              <button
-                key={category.id}
-                className={`cat-list-item${selectedCategory?.id === category.id ? " active" : ""}`}
-                onClick={() => setSelectedCategoryId(category.id)}
-                type="button"
-              >
-                <span>{category.name}</span>
-                <span className="cat-list-item__count">{category.items.length}</span>
-              </button>
-            ))}
+            <div className="cat-list">
+              {menu.map((category) => (
+                <div
+                  key={category.id}
+                  className={`cat-list-wrapper${selectedCategory?.id === category.id ? " active" : ""}`}
+                >
+                  <button
+                    className="cat-list-btn"
+                    onClick={() => setSelectedCategoryId(category.id)}
+                    type="button"
+                  >
+                    <span className="cat-list-name">{category.name}</span>
+                    <span className="cat-list-item__count">{category.items.length}</span>
+                  </button>
+                  <div className="cat-list-actions">
+                    <button
+                      aria-label={`Rename ${category.name}`}
+                      className="cat-action-btn"
+                      onClick={() => {
+                        setRenamingCategory(category);
+                        setRenameCategoryValue(category.name);
+                      }}
+                      title="Rename category"
+                      type="button"
+                    >
+                      <Pencil size={12} />
+                    </button>
+                    <button
+                      aria-label={`Delete ${category.name}`}
+                      className="cat-action-btn cat-action-btn--delete"
+                      onClick={() => setConfirmDelete({ type: "category", id: category.id, name: category.name })}
+                      title="Delete category"
+                      type="button"
+                    >
+                      <Trash2 size={12} />
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
 
             <div className="add-cat-area">
               {showAddCatForm ? (
@@ -513,9 +824,24 @@ export function AdminPage() {
                     required
                     autoFocus
                   />
-                  <button className="btn-primary" disabled={busy} type="submit" style={{ padding: "9px 12px", fontSize: "13px", borderRadius: "var(--radius-sm)", width: "auto" }}>
-                    Add
-                  </button>
+                  <div style={{ display: "flex", gap: "6px" }}>
+                    <button
+                      className="btn-primary"
+                      disabled={busy}
+                      type="submit"
+                      style={{ padding: "8px 12px", fontSize: "12.5px", borderRadius: "var(--radius-sm)", flex: 1 }}
+                    >
+                      Add
+                    </button>
+                    <button
+                      className="btn-outline-sm"
+                      onClick={() => setShowAddCatForm(false)}
+                      type="button"
+                      style={{ padding: "8px 10px", fontSize: "12px" }}
+                    >
+                      Cancel
+                    </button>
+                  </div>
                 </form>
               ) : (
                 <button
@@ -530,7 +856,7 @@ export function AdminPage() {
             </div>
           </aside>
 
-          {/* Main */}
+          {/* Main Menu Management */}
           <section className="menu-main">
             <div className="menu-main__head">
               <h2>{selectedCategory?.name ?? "Menu"}</h2>
@@ -611,14 +937,13 @@ export function AdminPage() {
                   <div>Item</div>
                   <div>Price</div>
                   <div>Available</div>
-                  <div />
+                  <div>Actions</div>
                 </div>
 
                 {selectedCategory.items.map((item) => (
                   <div className="menu-table-row" key={item.id}>
-                    <div>{item.name}</div>
-                    <div>{formatInrFromPaise(item.pricePaise)}</div>
-                    {/* Toggle is displayed but disabled — full availability API not yet wired */}
+                    <div className="menu-item-cell-name">{item.name}</div>
+                    <div className="menu-item-cell-price">{formatInrFromPaise(item.pricePaise)}</div>
                     <div>
                       <div
                         className="avail-toggle on"
@@ -629,14 +954,24 @@ export function AdminPage() {
                         title="Availability toggle coming soon"
                       />
                     </div>
-                    <div>
+                    <div className="menu-item-cell-actions">
                       <button
                         aria-label={`Edit ${item.name}`}
                         className="row-edit-btn"
                         onClick={() => setEditingItem(item)}
+                        title="Edit item"
                         type="button"
                       >
                         <Pencil aria-hidden="true" size={14} />
+                      </button>
+                      <button
+                        aria-label={`Delete ${item.name}`}
+                        className="row-edit-btn row-edit-btn--delete"
+                        onClick={() => setConfirmDelete({ type: "item", id: item.id, name: item.name })}
+                        title="Delete item"
+                        type="button"
+                      >
+                        <Trash2 aria-hidden="true" size={14} />
                       </button>
                     </div>
                   </div>
@@ -650,6 +985,42 @@ export function AdminPage() {
               </>
             ) : null}
           </section>
+        </div>
+      ) : null}
+
+      {/* Rename category modal */}
+      {renamingCategory ? (
+        <div className="modal-backdrop" role="presentation">
+          <form className="modal" onSubmit={saveRenameCategory}>
+            <h2>Rename category</h2>
+            <div className="modal-field">
+              <label htmlFor="rename-cat-name">Category name</label>
+              <input
+                id="rename-cat-name"
+                value={renameCategoryValue}
+                onChange={(event) => setRenameCategoryValue(event.target.value)}
+                required
+                autoFocus
+              />
+            </div>
+            <div className="modal-actions">
+              <button
+                className="btn-primary"
+                disabled={busy}
+                type="submit"
+                style={{ width: "auto", padding: "10px 18px", fontSize: "13.5px", borderRadius: "var(--radius-sm)" }}
+              >
+                Save
+              </button>
+              <button
+                className="btn-outline"
+                onClick={() => setRenamingCategory(null)}
+                type="button"
+              >
+                Cancel
+              </button>
+            </div>
+          </form>
         </div>
       ) : null}
 
@@ -745,8 +1116,67 @@ export function AdminPage() {
         </div>
       ) : null}
 
+      {/* Themed Confirmation Modal for Deletion */}
+      {confirmDelete ? (
+        <div
+          className="modal-backdrop"
+          onClick={() => setConfirmDelete(null)}
+          role="presentation"
+        >
+          <div className="modal" onClick={(event) => event.stopPropagation()} role="dialog">
+            <h2>Delete {confirmDelete.type === "category" ? "category" : "menu item"}?</h2>
+            <p
+              style={{
+                color: "var(--clay)",
+                fontSize: "13.5px",
+                lineHeight: "1.45",
+                margin: "4px 0 16px"
+              }}
+            >
+              Are you sure you want to delete{" "}
+              <strong style={{ color: "var(--parchment)" }}>"{confirmDelete.name}"</strong>
+              {confirmDelete.type === "category" ? " and all items inside it" : ""}? This action cannot be undone.
+            </p>
+            <div className="modal-actions">
+              <button
+                className="btn-primary"
+                disabled={busy}
+                onClick={async () => {
+                  const target = confirmDelete;
+                  setConfirmDelete(null);
+                  if (target.type === "category") {
+                    await deleteCategory(target.id, target.name);
+                  } else {
+                    await deleteItem(target.id, target.name);
+                  }
+                }}
+                style={{
+                  background: "var(--rust)",
+                  color: "#fff",
+                  width: "auto",
+                  padding: "11px 20px",
+                  fontSize: "13.5px",
+                  borderRadius: "var(--radius-sm)"
+                }}
+                type="button"
+              >
+                <Trash2 size={14} />
+                Delete
+              </button>
+              <button
+                className="btn-outline"
+                onClick={() => setConfirmDelete(null)}
+                type="button"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
       {/* Global admin notice */}
-      {notice && !editingItem ? (
+      {notice && !editingItem && !renamingCategory && !confirmDelete ? (
         <div className="admin-notice">
           <Notice variant={notice.variant} title={notice.title} subtitle={notice.subtitle} />
         </div>

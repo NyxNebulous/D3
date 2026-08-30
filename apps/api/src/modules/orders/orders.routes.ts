@@ -319,10 +319,6 @@ export function createOrdersRouter(database: Database): Router {
           return;
         }
 
-        if (order.paymentState !== "PAID_OFFLINE") {
-          throw new AppError(409, "PAYMENT_REQUIRED", "Record offline payment before completing the order");
-        }
-
         database
           .prepare(
             `

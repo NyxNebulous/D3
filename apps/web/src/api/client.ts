@@ -99,6 +99,12 @@ export async function apiPut<T>(path: string, body: unknown): Promise<T> {
   });
 }
 
+export async function apiDelete<T>(path: string): Promise<T> {
+  return apiRequest<T>(path, {
+    method: "DELETE"
+  });
+}
+
 async function apiRequest<T>(path: string, options: RequestOptions = {}): Promise<T> {
   const response = await fetch(`${apiBaseUrl}${path}`, {
     ...options,

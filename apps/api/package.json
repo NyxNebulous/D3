@@ -6,7 +6,7 @@
   "scripts": {
     "prebuild": "npm run build --workspace @d3/shared",
     "build": "tsc -p tsconfig.json",
-    "dev": "D3_ENABLE_DEV_SEED=true tsx --env-file=../../.env --conditions development src/app/server.ts",
+    "dev": "D3_ENABLE_DEV_SEED=true tsx watch --env-file=../../.env --conditions development src/app/server.ts",
     "test": "vitest run",
     "pretypecheck": "npm run build --workspace @d3/shared",
     "typecheck": "tsc -p tsconfig.json --noEmit"

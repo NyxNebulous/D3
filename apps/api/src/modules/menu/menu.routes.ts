@@ -6,6 +6,7 @@ import {
   menuItemUpdateSchema
 } from "@d3/shared";
 import type { Database } from "../../db/database.js";
+import { transaction } from "../../db/database.js";
 import { asyncHandler, AppError } from "../../middleware/errors.js";
 import { requireStaffSession } from "../../middleware/sessionAuth.js";
 import { validateBody } from "../../middleware/requestValidation.js";
@@ -49,6 +50,15 @@ export function createMenuRouter(database: Database): Router {
     validateBody(menuCategoryCreateSchema),
     asyncHandler((request, response) => {
       const body = request.body as { name: string; sortOrder?: number };
+
+      const existing = database
+        .prepare("SELECT id FROM menu_categories WHERE LOWER(name) = LOWER(?)")
+        .get(body.name);
+
+      if (existing) {
+        throw new AppError(409, "CATEGORY_EXISTS", "A category with this name already exists");
+      }
+
       const result = database
         .prepare("INSERT INTO menu_categories (name, sort_order) VALUES (?, ?)")
         .run(body.name, body.sortOrder ?? 0);
@@ -73,6 +83,16 @@ export function createMenuRouter(database: Database): Router {
         throw new AppError(400, "VALIDATION_ERROR", "No changes provided");
       }
 
+      if (body.name && body.name.toLowerCase() !== current.name.toLowerCase()) {
+        const existing = database
+          .prepare("SELECT id FROM menu_categories WHERE LOWER(name) = LOWER(?) AND id != ?")
+          .get(body.name, id);
+
+        if (existing) {
+          throw new AppError(409, "CATEGORY_EXISTS", "A category with this name already exists");
+        }
+      }
+
       database
         .prepare(
           `
@@ -84,6 +104,35 @@ export function createMenuRouter(database: Database): Router {
         .run(body.name ?? current.name, body.sortOrder ?? current.sortOrder, id);
 
       response.json({ category: readCategory(database, id) });
+    })
+  );
+
+  router.delete(
+    "/admin/menu/categories/:categoryId",
+    requireStaffSession(database),
+    asyncHandler((request, response) => {
+      const id = Number(request.params.categoryId);
+      assertPositiveId(id);
+
+      readCategory(database, id);
+
+      transaction(database, () => {
+        const itemRows = database
+          .prepare("SELECT id FROM menu_items WHERE category_id = ?")
+          .all(id) as { id: number }[];
+
+        for (const item of itemRows) {
+          database.prepare("DELETE FROM cart_items WHERE menu_item_id = ?").run(item.id);
+          database
+            .prepare("UPDATE order_items SET menu_item_id = NULL WHERE menu_item_id = ?")
+            .run(item.id);
+        }
+
+        database.prepare("DELETE FROM menu_items WHERE category_id = ?").run(id);
+        database.prepare("DELETE FROM menu_categories WHERE id = ?").run(id);
+      });
+
+      response.json({ success: true, deletedCategoryId: id });
     })
   );
 
@@ -101,6 +150,20 @@ export function createMenuRouter(database: Database): Router {
       };
 
       readCategory(database, body.categoryId);
+
+      const existing = database
+        .prepare(
+          "SELECT id FROM menu_items WHERE category_id = ? AND LOWER(name) = LOWER(?)"
+        )
+        .get(body.categoryId, body.name);
+
+      if (existing) {
+        throw new AppError(
+          409,
+          "ITEM_EXISTS",
+          "An item with this name already exists in this category"
+        );
+      }
 
       const result = database
         .prepare(
@@ -137,8 +200,25 @@ export function createMenuRouter(database: Database): Router {
         throw new AppError(400, "VALIDATION_ERROR", "No changes provided");
       }
 
+      const targetCategoryId = body.categoryId ?? current.categoryId;
       if (body.categoryId) {
         readCategory(database, body.categoryId);
+      }
+
+      if (body.name) {
+        const existing = database
+          .prepare(
+            "SELECT id FROM menu_items WHERE category_id = ? AND LOWER(name) = LOWER(?) AND id != ?"
+          )
+          .get(targetCategoryId, body.name, id);
+
+        if (existing) {
+          throw new AppError(
+            409,
+            "ITEM_EXISTS",
+            "An item with this name already exists in this category"
+          );
+        }
       }
 
       database
@@ -156,7 +236,7 @@ export function createMenuRouter(database: Database): Router {
           `
         )
         .run(
-          body.categoryId ?? current.categoryId,
+          targetCategoryId,
           body.name ?? current.name,
           body.pricePaise ?? current.pricePaise,
           body.isVeg === undefined ? (current.isVeg ? 1 : 0) : body.isVeg ? 1 : 0,
@@ -165,6 +245,27 @@ export function createMenuRouter(database: Database): Router {
         );
 
       response.json({ item: readItem(database, id) });
+    })
+  );
+
+  router.delete(
+    "/admin/menu/items/:itemId",
+    requireStaffSession(database),
+    asyncHandler((request, response) => {
+      const id = Number(request.params.itemId);
+      assertPositiveId(id);
+
+      readItem(database, id);
+
+      transaction(database, () => {
+        database.prepare("DELETE FROM cart_items WHERE menu_item_id = ?").run(id);
+        database
+          .prepare("UPDATE order_items SET menu_item_id = NULL WHERE menu_item_id = ?")
+          .run(id);
+        database.prepare("DELETE FROM menu_items WHERE id = ?").run(id);
+      });
+
+      response.json({ success: true, deletedItemId: id });
     })
   );
 
@@ -196,7 +297,7 @@ export function readMenu(database: Database) {
         ORDER BY sort_order ASC, name ASC
       `
     )
-    .all() as Array<Omit<MenuItemRow, "isVeg"> & { isVeg: number }>[];
+    .all() as (Omit<MenuItemRow, "isVeg"> & { isVeg: number })[];
 
   const normalizedItems = items.map((item) => ({
     ...item,
@@ -269,4 +370,3 @@ function assertPositiveId(id: number): void {
     throw new AppError(400, "VALIDATION_ERROR", "Invalid identifier");
   }
 }
-

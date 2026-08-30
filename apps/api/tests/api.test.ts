@@ -100,7 +100,7 @@ describe("D3 API V1", () => {
       .expect(401);
   });
 
-  it("keeps payment and fulfillment changes staff-authorized and sequential", async () => {
+  it("allows staff to mark orders prepared and paid independently", async () => {
     const server = createTestServer();
     const customerAgent = request.agent(server.app);
     const adminAgent = request.agent(server.app);
@@ -123,7 +123,13 @@ describe("D3 API V1", () => {
       .send({ username: "manager", password: "manager-password" })
       .expect(200);
 
-    await adminAgent.post(`/api/admin/orders/${orderId}/mark-completed`).send({}).expect(409);
+    const completed = await adminAgent
+      .post(`/api/admin/orders/${orderId}/mark-completed`)
+      .send({})
+      .expect(200);
+
+    expect(completed.body.order.paymentState).toBe("UNPAID");
+    expect(completed.body.order.fulfillmentState).toBe("COMPLETED");
 
     const paid = await adminAgent
       .post(`/api/admin/orders/${orderId}/mark-paid-offline`)
@@ -131,15 +137,7 @@ describe("D3 API V1", () => {
       .expect(200);
 
     expect(paid.body.order.paymentState).toBe("PAID_OFFLINE");
-    expect(paid.body.order.fulfillmentState).toBe("PENDING");
-
-    const completed = await adminAgent
-      .post(`/api/admin/orders/${orderId}/mark-completed`)
-      .send({})
-      .expect(200);
-
-    expect(completed.body.order.paymentState).toBe("PAID_OFFLINE");
-    expect(completed.body.order.fulfillmentState).toBe("COMPLETED");
+    expect(paid.body.order.fulfillmentState).toBe("COMPLETED");
   });
 
   it("supports veg and non-veg menu metadata", async () => {
@@ -168,6 +166,9 @@ describe("D3 API V1", () => {
     const menu = await adminAgent.get("/api/admin/menu").expect(200);
     expect(menu.body.categories.some((categoryRow: any) => categoryRow.name === "Mains")).toBe(true);
     expect(menu.body.categories.flatMap((categoryRow: any) => categoryRow.items).some((entry: any) => entry.name === "Paneer Tikka" && entry.isVeg === true)).toBe(true);
+
+    await adminAgent.delete(`/api/admin/menu/items/${item.body.item.id}`).expect(200);
+    await adminAgent.delete(`/api/admin/menu/categories/${category.body.category.id}`).expect(200);
   });
 
   it("invalidates a customer session when they scan a different table QR", async () => {

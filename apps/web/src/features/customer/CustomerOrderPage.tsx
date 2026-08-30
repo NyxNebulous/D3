@@ -58,8 +58,8 @@ function formatPaymentState(state: string): string {
 
 function formatFulfillmentState(state: string): string {
   switch (state) {
-    case "PENDING": return "Pending";
-    case "COMPLETED": return "Complete";
+    case "PENDING": return "Preparing";
+    case "COMPLETED": return "Ready";
     default: return state;
   }
 }
@@ -69,7 +69,7 @@ function paymentBadgeClass(state: string): string {
 }
 
 function fulfillmentBadgeClass(state: string): string {
-  return state === "COMPLETED" ? "badge badge-completed" : "badge badge-pending";
+  return state === "COMPLETED" ? "badge badge-completed" : "badge badge-preparing";
 }
 
 export function CustomerOrderPage({ qrId, signature }: CustomerOrderPageProps) {
@@ -162,6 +162,19 @@ export function CustomerOrderPage({ qrId, signature }: CustomerOrderPageProps) {
       mounted = false;
     };
   }, [loadCustomerData, qrId, signature]);
+
+  // Auto-sync customer orders (e.g. food preparation progress) in background
+  useEffect(() => {
+    if (!session) return;
+
+    const interval = setInterval(() => {
+      apiGet<{ orders: Order[] }>("/api/customer/orders")
+        .then((response) => setOrders(response.orders))
+        .catch(() => {});
+    }, 15000);
+
+    return () => clearInterval(interval);
+  }, [session]);
 
   useEffect(() => {
     if (!menu.length) return;
@@ -392,8 +405,10 @@ export function CustomerOrderPage({ qrId, signature }: CustomerOrderPageProps) {
           <section className="c-screen c-screen--home active">
             <div className="home-header">
               <div>
-                <div className="greeting">Hi {session?.customer.name ?? "there"}</div>
-                <div className="greeting-sub">{customerTableText} · D3</div>
+                <div className="greeting">Hi! {session?.customer.name ?? "there"}</div>
+                <div className="greeting-sub">
+                  D3
+                </div>
               </div>
               <div className="table-badge">{tableShortLabel}</div>
             </div>
@@ -488,19 +503,11 @@ export function CustomerOrderPage({ qrId, signature }: CustomerOrderPageProps) {
                             />
                             <span className="menu-item__name">{item.name}</span>
                           </div>
-                          <div className="menu-item__price">{formatInrFromPaise(item.pricePaise)}</div>
+                          <div className="menu-item__meta">{formatInrFromPaise(item.pricePaise)}</div>
                         </div>
 
                         <div className="menu-item__action">
-                          {quantity === 0 ? (
-                            <button
-                              className="add-btn"
-                              onClick={() => void setQuantity(item.id, 1)}
-                              type="button"
-                            >
-                              Add
-                            </button>
-                          ) : (
+                          {quantity > 0 ? (
                             <div className="stepper" aria-label={`${item.name} quantity`}>
                               <button
                                 className="stepper__dec"
@@ -520,6 +527,15 @@ export function CustomerOrderPage({ qrId, signature }: CustomerOrderPageProps) {
                                 +
                               </button>
                             </div>
+                          ) : (
+                            <button
+                              className="add-btn"
+                              aria-label={`Add ${item.name}`}
+                              onClick={() => void setQuantity(item.id, 1)}
+                              type="button"
+                            >
+                              Add
+                            </button>
                           )}
                         </div>
                       </div>
@@ -567,30 +583,34 @@ export function CustomerOrderPage({ qrId, signature }: CustomerOrderPageProps) {
                 <div className="cart-scroll">
                   {cart.items.map((item) => (
                     <div className="cart-item-row" key={item.menuItemId}>
-                      <div>
+                      <div className="cart-item__details">
                         <div className="cart-item__name">{item.name}</div>
                         <div className="cart-item__meta">
-                          {formatInrFromPaise(item.unitPricePaise)} × {item.quantity}
+                          {item.quantity} × {formatInrFromPaise(item.unitPricePaise)}
                         </div>
                       </div>
-                      <div className="stepper" aria-label={`${item.name} quantity`}>
-                        <button
-                          className="stepper__dec"
-                          aria-label={`Decrease ${item.name}`}
-                          onClick={() => void setQuantity(item.menuItemId, item.quantity - 1)}
-                          type="button"
-                        >
-                          −
-                        </button>
-                        <span className="stepper__qty">{item.quantity}</span>
-                        <button
-                          className="stepper__inc"
-                          aria-label={`Increase ${item.name}`}
-                          onClick={() => void setQuantity(item.menuItemId, item.quantity + 1)}
-                          type="button"
-                        >
-                          +
-                        </button>
+
+                      <div className="cart-item__right">
+                        <div className="stepper" aria-label={`${item.name} quantity`}>
+                          <button
+                            className="stepper__dec"
+                            aria-label={`Decrease ${item.name}`}
+                            onClick={() => void setQuantity(item.menuItemId, item.quantity - 1)}
+                            type="button"
+                          >
+                            −
+                          </button>
+                          <span className="stepper__qty">{item.quantity}</span>
+                          <button
+                            className="stepper__inc"
+                            aria-label={`Increase ${item.name}`}
+                            onClick={() => void setQuantity(item.menuItemId, item.quantity + 1)}
+                            type="button"
+                          >
+                            +
+                          </button>
+                        </div>
+                        <div className="cart-item__total">{formatInrFromPaise(item.lineTotalPaise)}</div>
                       </div>
                     </div>
                   ))}
@@ -665,9 +685,14 @@ export function CustomerOrderPage({ qrId, signature }: CustomerOrderPageProps) {
                     </div>
 
                     <div className="customer-order-card__items">
-                      {order.items
-                        .map((item) => `${item.quantity}× ${item.itemName}`)
-                        .join(", ")}
+                      {order.items.map((item) => (
+                        <div className="customer-order-card__line" key={`${order.id}-${item.itemName}`}>
+                          <span>
+                            {item.quantity} × {item.itemName}
+                          </span>
+                          <span>{formatInrFromPaise(item.lineTotalPaise)}</span>
+                        </div>
+                      ))}
                     </div>
                   </article>
                 ))
