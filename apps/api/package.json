@@ -1,0 +1,31 @@
+{
+  "name": "@d3/api",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "prebuild": "npm run build --workspace @d3/shared",
+    "build": "tsc -p tsconfig.json",
+    "dev": "tsx --conditions development src/app/server.ts",
+    "test": "vitest run",
+    "pretypecheck": "npm run build --workspace @d3/shared",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@d3/shared": "0.1.0",
+    "cors": "^2.8.5",
+    "express": "^5.1.0",
+    "helmet": "^8.1.0",
+    "zod": "^4.1.5"
+  },
+  "devDependencies": {
+    "@types/cors": "^2.8.19",
+    "@types/express": "^5.0.3",
+    "@types/node": "^24.3.0",
+    "@types/supertest": "^6.0.3",
+    "supertest": "^7.1.4",
+    "tsx": "^4.20.5",
+    "typescript": "^5.9.2",
+    "vitest": "^3.2.4"
+  }
+}
