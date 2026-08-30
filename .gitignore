@@ -5,5 +5,5 @@ coverage/
 .env.*
 !.env.example
 data/
-*.tsbuildinfo
 *.log
+

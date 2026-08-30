@@ -282,7 +282,7 @@ Relationships:
 V1 payment states:
 
 - `UNPAID`;
-- `PAID_OFFLINE`.
+- `PAID`.
 
 V1 fulfillment states:
 
@@ -306,7 +306,7 @@ Relationships:
 #### Offline Payments
 
 - payment state can live on `orders` for V1 because payment is offline and simple.
-- `order_state_events` should record admin/staff action when an order is marked `PAID_OFFLINE`.
+- `order_state_events` should record admin/staff action when an order is marked `PAID`.
 
 There are no payment attempts, payment provider events, payment webhooks, refunds, or reconciliation tables in V1.
 
@@ -328,7 +328,7 @@ Expected constraints include:
 - unique active session token hashes;
 - unique staff usernames;
 - unique public order numbers;
-- check constraints for `UNPAID`/`PAID_OFFLINE` payment state;
+- check constraints for `UNPAID`/`PAID` payment state;
 - check constraints for `PENDING`/`COMPLETED` fulfillment state;
 - positive quantity checks for cart and order items;
 - integer INR money values;
@@ -532,7 +532,7 @@ Payment service responsibilities:
 
 - initialize new customer orders as `UNPAID`;
 - expose payment state to the customer and admin UI;
-- allow only authorized staff/admin sessions to mark an order `PAID_OFFLINE`;
+- allow only authorized staff/admin sessions to mark an order `PAID`;
 - prevent customers from marking their own orders paid;
 - audit offline payment state changes.
 

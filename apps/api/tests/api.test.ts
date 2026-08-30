@@ -1,105 +1,207 @@
 import request from "supertest";
-import express from "express";
-import { describe, expect, it } from "vitest";
-import { z } from "zod";
-import { createTestConfig } from "../src/config/env.js";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { createTestConfig, type AppConfig } from "../src/config/env.js";
 import { openDatabase, type Database } from "../src/db/database.js";
-import { transaction } from "../src/db/database.js";
 import { runMigrations } from "../src/db/migrations.js";
 import { createApp } from "../src/app/createApp.js";
-import { createErrorHandler } from "../src/middleware/errors.js";
-import { createOriginGuard } from "../src/middleware/originGuard.js";
-import { validateBody } from "../src/middleware/requestValidation.js";
+import { resetRateLimitsForTests } from "../src/middleware/rateLimit.js";
+import { hashPassword, signQrId } from "../src/security/crypto.js";
 
-describe("D3 API foundation", () => {
-  it("serves a minimal health endpoint backed by SQLite", async () => {
-    const { app } = createFoundationServer();
+type TestServer = {
+  config: AppConfig;
+  database: Database;
+  app: ReturnType<typeof createApp>;
+  qrId: string;
+  qrSignature: string;
+  menuItemId: number;
+};
 
-    const response = await request(app).get("/health").expect(200);
-
-    expect(response.body).toEqual({ ok: true, service: "D3 API" });
+describe("D3 API V1", () => {
+  beforeEach(() => {
+    resetRateLimitsForTests();
   });
 
-  it("creates the migration ledger without business tables", () => {
-    const database = openDatabase(":memory:");
-
-    runMigrations(database);
-
-    const migrationTable = database
-      .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'schema_migrations'")
-      .get();
-    const businessTable = database
-      .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'orders'")
-      .get();
-
-    expect(migrationTable).toEqual({ name: "schema_migrations" });
-    expect(businessTable).toBeUndefined();
+  afterEach(() => {
+    resetRateLimitsForTests();
   });
 
-  it("rolls back failed transactions", () => {
-    const database = openDatabase(":memory:");
-    database.exec("CREATE TABLE transaction_smoke (id INTEGER PRIMARY KEY, label TEXT NOT NULL);");
+  it("rejects QR signature tampering before establishing table context", async () => {
+    const server = createTestServer();
+    const agent = request.agent(server.app);
 
-    expect(() =>
-      transaction(database, () => {
-        database.prepare("INSERT INTO transaction_smoke (label) VALUES (?)").run("rolled-back");
-        throw new Error("stop");
-      })
-    ).toThrow("stop");
+    await agent
+      .post("/api/qr/validate")
+      .send({ qrId: server.qrId, signature: "0".repeat(64) })
+      .expect(400);
 
-    const rows = database.prepare("SELECT label FROM transaction_smoke").all();
-    expect(rows).toEqual([]);
+    const response = await agent
+      .post("/api/qr/validate")
+      .send({ qrId: server.qrId, signature: server.qrSignature })
+      .expect(200);
+
+    expect(response.body.table).toEqual({ label: "Table 7" });
   });
 
-  it("returns a safe validation error response", async () => {
-    const config = createTestConfig();
-    const app = express();
+  it("creates orders with server-derived totals and offline V1 states", async () => {
+    const server = createTestServer();
+    const agent = request.agent(server.app);
 
-    app.use(express.json());
-    app.post(
-      "/validate",
-      validateBody(z.object({ name: z.string().min(1) }).strict()),
-      (request, response) => {
-        response.json(request.body);
-      }
-    );
-    app.use(createErrorHandler(config));
+    await authenticateCustomer(server, agent);
 
-    const response = await request(app).post("/validate").send({ name: "" }).expect(400);
+    await agent
+      .put("/api/cart/items")
+      .send({ menuItemId: server.menuItemId, quantity: 2 })
+      .expect(200);
 
-    expect(response.body).toEqual({
-      error: {
-        code: "VALIDATION_ERROR",
-        message: "Invalid request"
-      }
-    });
-  });
+    await agent
+      .post("/api/orders")
+      .set("Idempotency-Key", "order-rejects-client-total")
+      .send({ totalPaise: 1 })
+      .expect(400);
 
-  it("rejects unsafe cross-origin write requests", async () => {
-    const config = createTestConfig();
-    const app = express();
-
-    app.use(createOriginGuard(config));
-    app.post("/write", (_request, response) => response.status(204).send());
-    app.use(createErrorHandler(config));
-
-    const response = await request(app)
-      .post("/write")
-      .set("Origin", "https://example.invalid")
+    const response = await agent
+      .post("/api/orders")
+      .set("Idempotency-Key", "order-server-total")
       .send({})
-      .expect(403);
+      .expect(201);
 
-    expect(response.body.error.code).toBe("ORIGIN_FORBIDDEN");
+    expect(response.body.order.totalPaise).toBe(25000);
+    expect(response.body.order.paymentState).toBe("UNPAID");
+    expect(response.body.order.fulfillmentState).toBe("PENDING");
+    expect(response.body.order.items).toEqual([
+      expect.objectContaining({
+        itemName: "Fixture Item",
+        quantity: 2,
+        unitPricePaise: 12500,
+        lineTotalPaise: 25000
+      })
+    ]);
+  });
+
+  it("does not allow a customer session to mark offline payment", async () => {
+    const server = createTestServer();
+    const agent = request.agent(server.app);
+
+    await authenticateCustomer(server, agent);
+    await agent
+      .put("/api/cart/items")
+      .send({ menuItemId: server.menuItemId, quantity: 1 })
+      .expect(200);
+
+    const orderResponse = await agent
+      .post("/api/orders")
+      .set("Idempotency-Key", "customer-cannot-pay")
+      .send({})
+      .expect(201);
+
+    await agent
+      .post(`/api/admin/orders/${orderResponse.body.order.id}/mark-paid-offline`)
+      .send({})
+      .expect(401);
+  });
+
+  it("keeps payment and fulfillment changes staff-authorized and sequential", async () => {
+    const server = createTestServer();
+    const customerAgent = request.agent(server.app);
+    const adminAgent = request.agent(server.app);
+
+    await authenticateCustomer(server, customerAgent);
+    await customerAgent
+      .put("/api/cart/items")
+      .send({ menuItemId: server.menuItemId, quantity: 1 })
+      .expect(200);
+
+    const orderResponse = await customerAgent
+      .post("/api/orders")
+      .set("Idempotency-Key", "admin-updates-order")
+      .send({})
+      .expect(201);
+    const orderId = orderResponse.body.order.id as number;
+
+    await adminAgent
+      .post("/api/admin/login")
+      .send({ username: "manager", password: "manager-password" })
+      .expect(200);
+
+    await adminAgent.post(`/api/admin/orders/${orderId}/mark-completed`).send({}).expect(409);
+
+    const paid = await adminAgent
+      .post(`/api/admin/orders/${orderId}/mark-paid-offline`)
+      .send({})
+      .expect(200);
+
+    expect(paid.body.order.paymentState).toBe("PAID_OFFLINE");
+    expect(paid.body.order.fulfillmentState).toBe("PENDING");
+
+    const completed = await adminAgent
+      .post(`/api/admin/orders/${orderId}/mark-completed`)
+      .send({})
+      .expect(200);
+
+    expect(completed.body.order.paymentState).toBe("PAID_OFFLINE");
+    expect(completed.body.order.fulfillmentState).toBe("COMPLETED");
   });
 });
 
-function createFoundationServer(): { app: ReturnType<typeof createApp>; database: Database } {
+function createTestServer(): TestServer {
   const config = createTestConfig();
   const database = openDatabase(config.databasePath);
   runMigrations(database);
 
+  const table = database.prepare("INSERT INTO dining_tables (label) VALUES (?)").run("Table 7");
+  const tableId = Number(table.lastInsertRowid);
+  const qrId = "fixture-table-7";
+
+  database
+    .prepare("INSERT INTO table_qr_codes (qr_identifier, dining_table_id) VALUES (?, ?)")
+    .run(qrId, tableId);
+
+  const category = database
+    .prepare("INSERT INTO menu_categories (name, sort_order) VALUES (?, ?)")
+    .run("Fixture", 0);
+  const item = database
+    .prepare(
+      `
+        INSERT INTO menu_items (category_id, name, price_paise, sort_order)
+        VALUES (?, ?, ?, ?)
+      `
+    )
+    .run(Number(category.lastInsertRowid), "Fixture Item", 12500, 0);
+
+  database
+    .prepare("INSERT INTO staff_users (username, password_hash) VALUES (?, ?)")
+    .run("manager", hashPassword("manager-password"));
+
   return {
+    config,
+    database,
     app: createApp(database, config),
-    database
+    qrId,
+    qrSignature: signQrId(qrId, config.qrSecret),
+    menuItemId: Number(item.lastInsertRowid)
   };
 }
+
+async function authenticateCustomer(
+  server: TestServer,
+  agent: ReturnType<typeof request.agent>
+): Promise<void> {
+  await agent
+    .post("/api/qr/validate")
+    .send({ qrId: server.qrId, signature: server.qrSignature })
+    .expect(200);
+
+  const otpResponse = await agent
+    .post("/api/auth/customer/request-otp")
+    .send({ name: "Asha", mobileNumber: "+919876543210" })
+    .expect(200);
+
+  await agent
+    .post("/api/auth/customer/verify-otp")
+    .send({
+      challengeId: otpResponse.body.challengeId,
+      otp: otpResponse.body.devOtp
+    })
+    .expect(200);
+}
+

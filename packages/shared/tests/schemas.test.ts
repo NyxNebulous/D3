@@ -1,21 +1,20 @@
 import { describe, expect, it } from "vitest";
-import { healthResponseSchema } from "../src/index.js";
+import { createOrderSchema, paymentStates, updateCartItemSchema } from "../src/index.js";
 
-describe("shared Phase 1 schemas", () => {
-  it("accepts the API health contract", () => {
-    expect(healthResponseSchema.parse({ ok: true, service: "D3 API" })).toEqual({
-      ok: true,
-      service: "D3 API"
+describe("shared V1 schemas", () => {
+  it("keeps payment states offline-only", () => {
+    expect(paymentStates).toEqual(["UNPAID", "PAID_OFFLINE"]);
+  });
+
+  it("rejects client-provided totals during order creation", () => {
+    expect(createOrderSchema.safeParse({ totalPaise: 1 }).success).toBe(false);
+  });
+
+  it("accepts quantity zero so the backend can remove cart items", () => {
+    expect(updateCartItemSchema.parse({ menuItemId: 1, quantity: 0 })).toEqual({
+      menuItemId: 1,
+      quantity: 0
     });
   });
-
-  it("rejects unexpected health payload fields", () => {
-    expect(
-      healthResponseSchema.safeParse({
-        ok: true,
-        service: "D3 API",
-        featureFlag: "not-yet"
-      }).success
-    ).toBe(false);
-  });
 });
+

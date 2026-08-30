@@ -1,54 +1,19 @@
-import { useEffect, useState } from "react";
-import { getApiHealth } from "../api/client.js";
-
-type ApiStatus = "checking" | "ready" | "unavailable";
+import { AdminPage } from "../features/admin/AdminPage.js";
+import { CustomerOrderPage } from "../features/customer/CustomerOrderPage.js";
 
 export function App() {
-  const [apiStatus, setApiStatus] = useState<ApiStatus>("checking");
+  const url = new URL(window.location.href);
 
-  useEffect(() => {
-    const controller = new AbortController();
-
-    getApiHealth(controller.signal)
-      .then(() => setApiStatus("ready"))
-      .catch(() => {
-        if (!controller.signal.aborted) {
-          setApiStatus("unavailable");
-        }
-      });
-
-    return () => controller.abort();
-  }, []);
-
-  return (
-    <main className="app-shell">
-      <section className="status-panel" aria-labelledby="app-title">
-        <p className="eyebrow">Phase 1 foundation</p>
-        <h1 id="app-title">D3</h1>
-        <p className="lede">React, TypeScript, and Vite are running.</p>
-        <dl className="status-grid">
-          <div>
-            <dt>Frontend</dt>
-            <dd>Ready</dd>
-          </div>
-          <div>
-            <dt>API</dt>
-            <dd>{formatApiStatus(apiStatus)}</dd>
-          </div>
-        </dl>
-      </section>
-    </main>
-  );
-}
-
-function formatApiStatus(status: ApiStatus): string {
-  if (status === "ready") {
-    return "API ready";
+  if (url.pathname.startsWith("/admin")) {
+    return <AdminPage />;
   }
 
-  if (status === "unavailable") {
-    return "API unavailable";
-  }
+  const pathQrId = url.pathname.startsWith("/t/")
+    ? decodeURIComponent(url.pathname.replace("/t/", "").split("/")[0] ?? "")
+    : "";
+  const queryQrId = url.searchParams.get("qrId") ?? "";
+  const signature = url.searchParams.get("sig") ?? "";
 
-  return "Checking API";
+  return <CustomerOrderPage qrId={pathQrId || queryQrId} signature={signature} />;
 }
+

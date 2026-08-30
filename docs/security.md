@@ -156,7 +156,7 @@ Threats:
 Controls:
 
 - initialize orders as `UNPAID`;
-- allow only authorized staff/admin sessions to mark `PAID_OFFLINE`;
+- allow only authorized staff/admin sessions to mark `PAID`;
 - allow only authorized staff/admin sessions to mark `COMPLETED`;
 - enforce order ownership for customer reads;
 - enforce staff authorization for admin reads/writes;
@@ -344,7 +344,7 @@ WHAT IS NOT TRUSTED:
 
 HOW IT IS VERIFIED:
 
-- In V1, only authorized staff/admin action can change payment state to `PAID_OFFLINE`. Future online payment must add provider-authenticated verification before any online paid state is accepted.
+- In V1, only authorized staff/admin action can change payment state to `PAID`. Future online payment must add provider-authenticated verification before any online paid state is accepted.
 
 ## Security Control Requirements
 
@@ -401,7 +401,7 @@ Required future V1 test areas:
 - backend-derived cart totals and rejected client-provided totals;
 - invalid item IDs and invalid quantities;
 - duplicate order creation prevention;
-- customer attempts to mark orders `PAID_OFFLINE`;
+- customer attempts to mark orders `PAID`;
 - customer attempts to mark orders `COMPLETED`;
 - unauthorized admin access;
 - admin login brute-force protection;

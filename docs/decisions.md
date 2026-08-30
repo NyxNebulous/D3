@@ -50,7 +50,7 @@ Rationale: This is the authoritative V1 workflow.
 
 Status: ACCEPTED
 
-Decision: V1 has no online payment gateway. Payment happens offline. The internal payment states are `UNPAID` and `PAID_OFFLINE`.
+Decision: V1 has no online payment gateway. Payment happens offline. The internal payment states are `UNPAID` and `PAID`.
 
 Rationale: The product specification explicitly excludes online payment, UPI, cards, payment SDKs, payment webhooks, refunds, and reconciliation from V1.
 
