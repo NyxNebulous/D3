@@ -80,6 +80,7 @@ export const menuItemCreateSchema = z
     categoryId: positiveIdSchema,
     name: z.string().trim().min(1).max(120),
     pricePaise: pricePaiseSchema,
+    isVeg: z.boolean(),
     sortOrder: z.number().int().min(0).max(10_000).optional()
   })
   .strict();

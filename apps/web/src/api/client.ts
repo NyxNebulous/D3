@@ -5,6 +5,7 @@ export type MenuItem = {
   categoryId: number;
   name: string;
   pricePaise: number;
+  isVeg: boolean;
   sortOrder: number;
 };
 
@@ -19,6 +20,7 @@ export type CartItem = {
   menuItemId: number;
   name: string;
   categoryName: string;
+  isVeg: boolean;
   quantity: number;
   unitPricePaise: number;
   lineTotalPaise: number;
@@ -35,6 +37,7 @@ export type OrderItem = {
   id: number;
   menuItemId: number | null;
   itemName: string;
+  isVeg: boolean;
   quantity: number;
   unitPricePaise: number;
   lineTotalPaise: number;

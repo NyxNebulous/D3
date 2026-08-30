@@ -56,11 +56,11 @@ export function ensureDevSeed(database: Database, config: AppConfig): DevSeedInf
     database
       .prepare(
         `
-          INSERT INTO menu_items (category_id, name, price_paise, sort_order)
-          VALUES (?, ?, ?, ?)
+          INSERT INTO menu_items (category_id, name, price_paise, is_veg, sort_order)
+          VALUES (?, ?, ?, ?, ?)
         `
       )
-      .run(Number(category.lastInsertRowid), "Sample Item", 10000, 0);
+      .run(Number(category.lastInsertRowid), "Sample Item", 10000, 1, 0);
   }
 
   return {

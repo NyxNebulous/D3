@@ -12,6 +12,7 @@ import { getOrCreateCart } from "../cart/cart.routes.js";
 type PendingCartItemRow = {
   menuItemId: number;
   name: string;
+  isVeg: boolean;
   quantity: number;
   unitPricePaise: number;
 };
@@ -35,6 +36,7 @@ type OrderItemRow = {
   id: number;
   menuItemId: number | null;
   itemName: string;
+  isVeg: boolean;
   quantity: number;
   unitPricePaise: number;
   lineTotalPaise: number;
@@ -84,6 +86,7 @@ export function createOrdersRouter(database: Database): Router {
               SELECT
                 menu_items.id AS menuItemId,
                 menu_items.name,
+                menu_items.is_veg AS isVeg,
                 cart_items.quantity,
                 menu_items.price_paise AS unitPricePaise
               FROM cart_items
@@ -92,7 +95,12 @@ export function createOrdersRouter(database: Database): Router {
               ORDER BY menu_items.id ASC
             `
           )
-          .all(cartId) as PendingCartItemRow[];
+          .all(cartId) as Array<Omit<PendingCartItemRow, "isVeg"> & { isVeg: number }>[];
+
+        const cartItemsNormalized = cartItems.map((item) => ({
+          ...item,
+          isVeg: Boolean(item.isVeg)
+        }));
 
         if (cartItems.length === 0) {
           throw new AppError(400, "CART_EMPTY", "Cart is empty");
@@ -133,19 +141,21 @@ export function createOrdersRouter(database: Database): Router {
               order_id,
               menu_item_id,
               item_name,
+              is_veg,
               quantity,
               unit_price_paise,
               line_total_paise
             )
-            VALUES (?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
           `
         );
 
-        for (const item of cartItems) {
+        for (const item of cartItemsNormalized) {
           insertItem.run(
             createdOrderId,
             item.menuItemId,
             item.name,
+            item.isVeg ? 1 : 0,
             item.quantity,
             item.unitPricePaise,
             item.quantity * item.unitPricePaise
@@ -382,6 +392,7 @@ export function readOrder(database: Database, orderId: number) {
           id,
           menu_item_id AS menuItemId,
           item_name AS itemName,
+          is_veg AS isVeg,
           quantity,
           unit_price_paise AS unitPricePaise,
           line_total_paise AS lineTotalPaise
@@ -390,11 +401,11 @@ export function readOrder(database: Database, orderId: number) {
         ORDER BY id ASC
       `
     )
-    .all(orderId) as OrderItemRow[];
+    .all(orderId) as Array<Omit<OrderItemRow, "isVeg"> & { isVeg: number }>[];
 
   return {
     ...row,
-    items
+    items: items.map((item) => ({ ...item, isVeg: Boolean(item.isVeg) }))
   };
 }
 

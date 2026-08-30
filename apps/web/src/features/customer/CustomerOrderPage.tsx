@@ -270,7 +270,12 @@ export function CustomerOrderPage({ qrId, signature }: CustomerOrderPageProps) {
                       return (
                         <article className="item-card" key={item.id}>
                           <div>
-                            <h4>{item.name}</h4>
+                            <div className="item-header">
+                              <h4>{item.name}</h4>
+                              <span className={item.isVeg ? "food-tag veg" : "food-tag non-veg"}>
+                                {item.isVeg ? "Veg" : "Non-veg"}
+                              </span>
+                            </div>
                             <p>{formatInrFromPaise(item.pricePaise)}</p>
                           </div>
                           <div className="stepper" aria-label={`${item.name} quantity`}>
@@ -313,6 +318,9 @@ export function CustomerOrderPage({ qrId, signature }: CustomerOrderPageProps) {
                     {cart.items.map((item) => (
                       <li key={item.menuItemId}>
                         <span>
+                          <span className={item.isVeg ? "food-tag tiny veg" : "food-tag tiny non-veg"}>
+                            {item.isVeg ? "V" : "N"}
+                          </span>
                           {item.quantity} x {item.name}
                         </span>
                         <strong>{formatInrFromPaise(item.lineTotalPaise)}</strong>

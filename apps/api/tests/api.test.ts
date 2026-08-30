@@ -142,6 +142,34 @@ describe("D3 API V1", () => {
     expect(completed.body.order.fulfillmentState).toBe("COMPLETED");
   });
 
+  it("supports veg and non-veg menu metadata", async () => {
+    const server = createTestServer();
+    const adminAgent = request.agent(server.app);
+
+    await adminAgent.post("/api/admin/login").send({ username: "manager", password: "manager-password" }).expect(200);
+
+    const category = await adminAgent
+      .post("/api/admin/menu/categories")
+      .send({ name: "Mains" })
+      .expect(201);
+
+    const item = await adminAgent
+      .post("/api/admin/menu/items")
+      .send({
+        categoryId: category.body.category.id,
+        name: "Paneer Tikka",
+        pricePaise: 17900,
+        isVeg: true
+      })
+      .expect(201);
+
+    expect(item.body.item.isVeg).toBe(true);
+
+    const menu = await adminAgent.get("/api/admin/menu").expect(200);
+    expect(menu.body.categories.some((categoryRow: any) => categoryRow.name === "Mains")).toBe(true);
+    expect(menu.body.categories.flatMap((categoryRow: any) => categoryRow.items).some((entry: any) => entry.name === "Paneer Tikka" && entry.isVeg === true)).toBe(true);
+  });
+
   it("invalidates a customer session when they scan a different table QR", async () => {
     const server = createTestServer();
     const agent = request.agent(server.app);
@@ -169,6 +197,33 @@ describe("D3 API V1", () => {
       .post("/api/auth/customer/request-otp")
       .send({ name: "Asha", mobileNumber: "+919876543210" })
       .expect(200);
+  });
+
+  it("never includes devOtp in production responses", async () => {
+    const config = createTestConfig({ nodeEnv: "production" });
+    const database = openDatabase(config.databasePath);
+    runMigrations(database);
+
+    const table = database.prepare("INSERT INTO dining_tables (label) VALUES (?)").run("Table 7");
+    const qrId = "prod-otp-check";
+
+    database
+      .prepare("INSERT INTO table_qr_codes (qr_identifier, dining_table_id) VALUES (?, ?)")
+      .run(qrId, Number(table.lastInsertRowid));
+
+    const agent = request.agent(createApp(database, config));
+
+    await agent
+      .post("/api/qr/validate")
+      .send({ qrId, signature: signQrId(qrId, config.qrSecret) })
+      .expect(200);
+
+    const otpResponse = await agent
+      .post("/api/auth/customer/request-otp")
+      .send({ name: "Asha", mobileNumber: "+919876543210" })
+      .expect(200);
+
+    expect(otpResponse.body).not.toHaveProperty("devOtp");
   });
 });
 

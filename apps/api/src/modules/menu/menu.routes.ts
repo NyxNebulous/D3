@@ -21,6 +21,7 @@ type MenuItemRow = {
   categoryId: number;
   name: string;
   pricePaise: number;
+  isVeg: boolean;
   sortOrder: number;
 };
 
@@ -95,6 +96,7 @@ export function createMenuRouter(database: Database): Router {
         categoryId: number;
         name: string;
         pricePaise: number;
+        isVeg: boolean;
         sortOrder?: number;
       };
 
@@ -103,11 +105,11 @@ export function createMenuRouter(database: Database): Router {
       const result = database
         .prepare(
           `
-            INSERT INTO menu_items (category_id, name, price_paise, sort_order)
-            VALUES (?, ?, ?, ?)
+            INSERT INTO menu_items (category_id, name, price_paise, is_veg, sort_order)
+            VALUES (?, ?, ?, ?, ?)
           `
         )
-        .run(body.categoryId, body.name, body.pricePaise, body.sortOrder ?? 0);
+        .run(body.categoryId, body.name, body.pricePaise, body.isVeg ? 1 : 0, body.sortOrder ?? 0);
 
       const item = readItem(database, Number(result.lastInsertRowid));
       response.status(201).json({ item });
@@ -127,6 +129,7 @@ export function createMenuRouter(database: Database): Router {
         categoryId?: number;
         name?: string;
         pricePaise?: number;
+        isVeg?: boolean;
         sortOrder?: number;
       };
 
@@ -146,6 +149,7 @@ export function createMenuRouter(database: Database): Router {
               category_id = ?,
               name = ?,
               price_paise = ?,
+              is_veg = ?,
               sort_order = ?,
               updated_at = CURRENT_TIMESTAMP
             WHERE id = ?
@@ -155,6 +159,7 @@ export function createMenuRouter(database: Database): Router {
           body.categoryId ?? current.categoryId,
           body.name ?? current.name,
           body.pricePaise ?? current.pricePaise,
+          body.isVeg === undefined ? (current.isVeg ? 1 : 0) : body.isVeg ? 1 : 0,
           body.sortOrder ?? current.sortOrder,
           id
         );
@@ -185,16 +190,22 @@ export function readMenu(database: Database) {
           category_id AS categoryId,
           name,
           price_paise AS pricePaise,
+          is_veg AS isVeg,
           sort_order AS sortOrder
         FROM menu_items
         ORDER BY sort_order ASC, name ASC
       `
     )
-    .all() as MenuItemRow[];
+    .all() as Array<Omit<MenuItemRow, "isVeg"> & { isVeg: number }>[];
+
+  const normalizedItems = items.map((item) => ({
+    ...item,
+    isVeg: Boolean(item.isVeg)
+  }));
 
   const itemsByCategory = new Map<number, MenuItemRow[]>();
 
-  for (const item of items) {
+  for (const item of normalizedItems) {
     const group = itemsByCategory.get(item.categoryId) ?? [];
     group.push(item);
     itemsByCategory.set(item.categoryId, group);
@@ -235,18 +246,22 @@ function readItem(database: Database, id: number): MenuItemRow {
           category_id AS categoryId,
           name,
           price_paise AS pricePaise,
+          is_veg AS isVeg,
           sort_order AS sortOrder
         FROM menu_items
         WHERE id = ?
       `
     )
-    .get(id) as MenuItemRow | undefined;
+    .get(id) as (Omit<MenuItemRow, "isVeg"> & { isVeg: number }) | undefined;
 
   if (!item) {
     throw new AppError(404, "MENU_ITEM_NOT_FOUND", "Menu item not found");
   }
 
-  return item;
+  return {
+    ...item,
+    isVeg: Boolean(item.isVeg)
+  };
 }
 
 function assertPositiveId(id: number): void {

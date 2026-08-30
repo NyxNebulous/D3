@@ -241,9 +241,44 @@ button:focus-visible {
   padding: 14px;
 }
 
+.item-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
 .item-card p {
   margin: 6px 0 0;
   color: #66645d;
+}
+
+.food-tag {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 52px;
+  padding: 4px 8px;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 900;
+  letter-spacing: 0.02em;
+}
+
+.food-tag.veg {
+  background: #e7f7ed;
+  color: #166534;
+}
+
+.food-tag.non-veg {
+  background: #fde7e7;
+  color: #991b1b;
+}
+
+.food-tag.tiny {
+  min-width: 20px;
+  padding: 2px 6px;
+  font-size: 0.62rem;
 }
 
 .stepper {

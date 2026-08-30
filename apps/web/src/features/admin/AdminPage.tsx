@@ -27,7 +27,7 @@ export function AdminPage() {
   const [selectedOrderId, setSelectedOrderId] = useState<number | null>(null);
   const [menu, setMenu] = useState<MenuCategory[]>([]);
   const [newCategoryName, setNewCategoryName] = useState("");
-  const [newItem, setNewItem] = useState({ categoryId: "", name: "", price: "" });
+  const [newItem, setNewItem] = useState({ categoryId: "", name: "", price: "", isVeg: true });
   const [editingItem, setEditingItem] = useState<MenuItem | null>(null);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
@@ -142,9 +142,10 @@ export function AdminPage() {
       await apiPost("/api/admin/menu/items", {
         categoryId: Number(newItem.categoryId),
         name: newItem.name,
-        pricePaise: Math.round(Number(newItem.price) * 100)
+        pricePaise: Math.round(Number(newItem.price) * 100),
+        isVeg: newItem.isVeg
       });
-      setNewItem({ categoryId: "", name: "", price: "" });
+      setNewItem({ categoryId: "", name: "", price: "", isVeg: true });
       await loadAdminData();
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Could not add item");
@@ -168,6 +169,7 @@ export function AdminPage() {
         categoryId: editingItem.categoryId,
         name: editingItem.name,
         pricePaise: editingItem.pricePaise,
+        isVeg: editingItem.isVeg,
         sortOrder: editingItem.sortOrder
       });
       setEditingItem(null);
@@ -270,7 +272,7 @@ export function AdminPage() {
               <div className="section-heading">
                 <h2>{selectedOrder.publicOrderNumber}</h2>
                 <div className="pill-row">
-                  <StatusPill tone={selectedOrder.paymentState === "PAID" ? "success" : "warning"}>
+                  <StatusPill tone={selectedOrder.paymentState === "PAID_OFFLINE" ? "success" : "warning"}>
                     {selectedOrder.paymentState}
                   </StatusPill>
                   <StatusPill tone={selectedOrder.fulfillmentState === "COMPLETED" ? "success" : "neutral"}>
@@ -296,6 +298,9 @@ export function AdminPage() {
                 {selectedOrder.items.map((item) => (
                   <li key={item.id}>
                     <span>
+                      <span className={item.isVeg ? "food-tag tiny veg" : "food-tag tiny non-veg"}>
+                        {item.isVeg ? "V" : "N"}
+                      </span>
                       {item.quantity} x {item.itemName}
                     </span>
                     <strong>{formatInrFromPaise(item.lineTotalPaise)}</strong>
@@ -378,6 +383,18 @@ export function AdminPage() {
                 required
               />
             </label>
+            <label>
+              Type
+              <select
+                value={newItem.isVeg ? "veg" : "non-veg"}
+                onChange={(event) =>
+                  setNewItem((current) => ({ ...current, isVeg: event.target.value === "veg" }))
+                }
+              >
+                <option value="veg">Veg</option>
+                <option value="non-veg">Non-veg</option>
+              </select>
+            </label>
             <ToolbarButton disabled={busy || menu.length === 0} icon={Plus} label="Add Item" type="submit" />
           </form>
 
@@ -392,7 +409,12 @@ export function AdminPage() {
                     onClick={() => setEditingItem(item)}
                     type="button"
                   >
-                    <span>{item.name}</span>
+                    <span>
+                      <span className={item.isVeg ? "food-tag tiny veg" : "food-tag tiny non-veg"}>
+                        {item.isVeg ? "V" : "N"}
+                      </span>
+                      {item.name}
+                    </span>
                     <strong>{formatInrFromPaise(item.pricePaise)}</strong>
                   </button>
                 ))}
@@ -450,6 +472,20 @@ export function AdminPage() {
                 }
                 required
               />
+            </label>
+            <label>
+              Type
+              <select
+                value={editingItem.isVeg ? "veg" : "non-veg"}
+                onChange={(event) =>
+                  setEditingItem((current) =>
+                    current ? { ...current, isVeg: event.target.value === "veg" } : current
+                  )
+                }
+              >
+                <option value="veg">Veg</option>
+                <option value="non-veg">Non-veg</option>
+              </select>
             </label>
             <div className="button-row">
               <ToolbarButton disabled={busy} icon={Save} label="Save" type="submit" variant="primary" />

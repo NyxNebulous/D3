@@ -14,6 +14,7 @@ type CartItemRow = {
   menuItemId: number;
   name: string;
   categoryName: string;
+  isVeg: boolean;
   quantity: number;
   unitPricePaise: number;
   lineTotalPaise: number;
@@ -111,6 +112,7 @@ export function readCart(database: Database, cartId: number) {
           menu_items.id AS menuItemId,
           menu_items.name,
           menu_categories.name AS categoryName,
+          menu_items.is_veg AS isVeg,
           cart_items.quantity,
           menu_items.price_paise AS unitPricePaise,
           cart_items.quantity * menu_items.price_paise AS lineTotalPaise
@@ -121,14 +123,19 @@ export function readCart(database: Database, cartId: number) {
         ORDER BY menu_categories.sort_order ASC, menu_items.sort_order ASC, menu_items.name ASC
       `
     )
-    .all(cartId) as CartItemRow[];
+    .all(cartId) as Array<Omit<CartItemRow, "isVeg"> & { isVeg: number }>[];
 
-  const totalPaise = items.reduce((sum, item) => sum + item.lineTotalPaise, 0);
+  const normalizedItems = items.map((item) => ({
+    ...item,
+    isVeg: Boolean(item.isVeg)
+  }));
+
+  const totalPaise = normalizedItems.reduce((sum, item) => sum + item.lineTotalPaise, 0);
 
   return {
     cart: {
       id: cartId,
-      items,
+      items: normalizedItems,
       totalPaise,
       currency: "INR"
     }

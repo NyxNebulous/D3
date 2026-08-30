@@ -111,6 +111,7 @@ const migrations: Migration[] = [
         category_id INTEGER NOT NULL REFERENCES menu_categories(id),
         name TEXT NOT NULL,
         price_paise INTEGER NOT NULL CHECK (price_paise > 0),
+        is_veg INTEGER NOT NULL DEFAULT 1 CHECK (is_veg IN (0, 1)),
         sort_order INTEGER NOT NULL DEFAULT 0,
         created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
         updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -159,6 +160,7 @@ const migrations: Migration[] = [
         order_id INTEGER NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
         menu_item_id INTEGER REFERENCES menu_items(id),
         item_name TEXT NOT NULL,
+        is_veg INTEGER NOT NULL DEFAULT 1 CHECK (is_veg IN (0, 1)),
         quantity INTEGER NOT NULL CHECK (quantity > 0),
         unit_price_paise INTEGER NOT NULL CHECK (unit_price_paise > 0),
         line_total_paise INTEGER NOT NULL CHECK (line_total_paise > 0)
@@ -187,6 +189,14 @@ const migrations: Migration[] = [
         UNIQUE(scope, idempotency_key)
       );
     `
+  },
+  {
+    id: 2,
+    name: "add_veg_flags_to_menu_and_orders",
+    sql: `
+      ALTER TABLE menu_items ADD COLUMN is_veg INTEGER NOT NULL DEFAULT 1 CHECK (is_veg IN (0, 1));
+      ALTER TABLE order_items ADD COLUMN is_veg INTEGER NOT NULL DEFAULT 1 CHECK (is_veg IN (0, 1));
+    `
   }
 ];
 
@@ -206,6 +216,20 @@ export function runMigrations(database: Database): void {
 
     if (existing) {
       continue;
+    }
+
+    if (migration.id === 2) {
+      const menuInfo = database.prepare("PRAGMA table_info(menu_items)").all() as Array<{ name: string }>;
+      const orderInfo = database.prepare("PRAGMA table_info(order_items)").all() as Array<{ name: string }>;
+      const hasMenuFlag = menuInfo.some((column) => column.name === "is_veg");
+      const hasOrderFlag = orderInfo.some((column) => column.name === "is_veg");
+
+      if (hasMenuFlag && hasOrderFlag) {
+        database
+          .prepare("INSERT INTO schema_migrations (id, name) VALUES (?, ?)")
+          .run(migration.id, migration.name);
+        continue;
+      }
     }
 
     transaction(database, () => {
