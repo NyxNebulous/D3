@@ -1,6 +1,6 @@
 import { randomBytes, randomUUID } from "node:crypto";
 import { Router } from "express";
-import { requestOtpSchema, verifyOtpSchema } from "@d3/shared";
+import { customerLoginSchema, requestOtpSchema, verifyOtpSchema } from "@d3/shared";
 import type { AppConfig } from "../../config/env.js";
 import type { Database } from "../../db/database.js";
 import { transaction } from "../../db/database.js";
@@ -37,6 +37,88 @@ type OtpChallengeRow = {
 
 export function createAuthRouter(database: Database, config: AppConfig): Router {
   const router = Router();
+
+  router.post(
+    "/customer/login",
+    requirePreSession(database),
+    createRateLimiter({
+      keyPrefix: "customer-login",
+      limit: 10,
+      windowMs: 10 * 60 * 1000,
+      key: (request) => `${request.ip}:${String(request.body.mobileNumber ?? "")}`
+    }),
+    validateBody(customerLoginSchema),
+    asyncHandler((request, response) => {
+      if (!request.preSession) {
+        throw new AppError(401, "PRE_SESSION_REQUIRED", "Scan a valid table QR code first");
+      }
+
+      const { name, mobileNumber } = request.body as { name: string; mobileNumber: string };
+      const preSession = request.preSession;
+
+      const result = transaction(database, () => {
+        database
+          .prepare(
+            `
+              INSERT INTO customers (name, mobile_number)
+              VALUES (?, ?)
+              ON CONFLICT(mobile_number) DO UPDATE SET
+                name = excluded.name,
+                updated_at = CURRENT_TIMESTAMP
+            `
+          )
+          .run(name, mobileNumber);
+
+        const customer = database
+          .prepare("SELECT id, name, mobile_number AS mobileNumber FROM customers WHERE mobile_number = ?")
+          .get(mobileNumber) as { id: number; name: string; mobileNumber: string };
+
+        database
+          .prepare("UPDATE pre_verification_sessions SET consumed_at = CURRENT_TIMESTAMP WHERE id = ?")
+          .run(preSession.id);
+
+        const token = createOpaqueToken();
+        const expiresAt = toSqliteTimestamp(new Date(Date.now() + config.customerSessionTtlMs));
+
+        const insert = database
+          .prepare(
+            `
+              INSERT INTO customer_sessions (
+                token_hash,
+                customer_id,
+                dining_table_id,
+                expires_at
+              )
+              VALUES (?, ?, ?, ?)
+            `
+          )
+          .run(hashToken(token), customer.id, preSession.diningTableId, expiresAt);
+
+        return {
+          token,
+          expiresAt,
+          customer,
+          sessionId: Number(insert.lastInsertRowid)
+        };
+      });
+
+      response.clearCookie(preSessionCookie, clearCookieOptions(config));
+      response.cookie(customerSessionCookie, result.token, cookieOptions(config, config.customerSessionTtlMs));
+      response.json({
+        customer: {
+          name: result.customer.name,
+          mobileNumber: result.customer.mobileNumber
+        },
+        table: {
+          label: request.preSession.tableLabel
+        },
+        session: {
+          id: result.sessionId,
+          expiresAt: result.expiresAt
+        }
+      });
+    })
+  );
 
   router.post(
     "/customer/request-otp",

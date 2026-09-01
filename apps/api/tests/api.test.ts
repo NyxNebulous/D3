@@ -195,9 +195,42 @@ describe("D3 API V1", () => {
     await agent.get("/api/auth/customer/session").expect(401);
 
     await agent
-      .post("/api/auth/customer/request-otp")
+      .post("/api/auth/customer/login")
       .send({ name: "Asha", mobileNumber: "+919876543210" })
       .expect(200);
+  });
+
+  it("authenticates a customer directly with name and mobile number after table QR validation", async () => {
+    const server = createTestServer();
+    const agent = request.agent(server.app);
+
+    // Rejects before QR scan
+    await agent
+      .post("/api/auth/customer/login")
+      .send({ name: "Ravi", mobileNumber: "+919876543210" })
+      .expect(401);
+
+    // Validates QR
+    await agent
+      .post("/api/qr/validate")
+      .send({ qrId: server.qrId, signature: server.qrSignature })
+      .expect(200);
+
+    // Logs in directly
+    const loginResponse = await agent
+      .post("/api/auth/customer/login")
+      .send({ name: "Ravi", mobileNumber: "+919876543210" })
+      .expect(200);
+
+    expect(loginResponse.body.customer).toEqual({
+      name: "Ravi",
+      mobileNumber: "+919876543210"
+    });
+    expect(loginResponse.body.table).toEqual({ label: "Table 7" });
+
+    // Session is active
+    const sessionResponse = await agent.get("/api/auth/customer/session").expect(200);
+    expect(sessionResponse.body.customer.name).toBe("Ravi");
   });
 
   it("never includes devOtp in production responses", async () => {
@@ -276,17 +309,9 @@ async function authenticateCustomer(
     .send({ qrId: server.qrId, signature: server.qrSignature })
     .expect(200);
 
-  const otpResponse = await agent
-    .post("/api/auth/customer/request-otp")
-    .send({ name: "Asha", mobileNumber: "+919876543210" })
-    .expect(200);
-
   await agent
-    .post("/api/auth/customer/verify-otp")
-    .send({
-      challengeId: otpResponse.body.challengeId,
-      otp: otpResponse.body.devOtp
-    })
+    .post("/api/auth/customer/login")
+    .send({ name: "Asha", mobileNumber: "+919876543210" })
     .expect(200);
 }
 

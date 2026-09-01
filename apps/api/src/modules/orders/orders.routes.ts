@@ -95,18 +95,18 @@ export function createOrdersRouter(database: Database): Router {
               ORDER BY menu_items.id ASC
             `
           )
-          .all(cartId) as Array<Omit<PendingCartItemRow, "isVeg"> & { isVeg: number }>[];
+          .all(cartId) as Array<Omit<PendingCartItemRow, "isVeg"> & { isVeg: number }>;
 
         const cartItemsNormalized = cartItems.map((item) => ({
           ...item,
           isVeg: Boolean(item.isVeg)
         }));
 
-        if (cartItems.length === 0) {
+        if (cartItemsNormalized.length === 0) {
           throw new AppError(400, "CART_EMPTY", "Cart is empty");
         }
 
-        const totalPaise = cartItems.reduce(
+        const totalPaise = cartItemsNormalized.reduce(
           (sum, item) => sum + item.quantity * item.unitPricePaise,
           0
         );
@@ -397,7 +397,7 @@ export function readOrder(database: Database, orderId: number) {
         ORDER BY id ASC
       `
     )
-    .all(orderId) as Array<Omit<OrderItemRow, "isVeg"> & { isVeg: number }>[];
+    .all(orderId) as Array<Omit<OrderItemRow, "isVeg"> & { isVeg: number }>;
 
   return {
     ...row,

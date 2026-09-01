@@ -123,7 +123,7 @@ export function readCart(database: Database, cartId: number) {
         ORDER BY menu_categories.sort_order ASC, menu_items.sort_order ASC, menu_items.name ASC
       `
     )
-    .all(cartId) as Array<Omit<CartItemRow, "isVeg"> & { isVeg: number }>[];
+    .all(cartId) as Array<Omit<CartItemRow, "isVeg"> & { isVeg: number }>;
 
   const normalizedItems = items.map((item) => ({
     ...item,

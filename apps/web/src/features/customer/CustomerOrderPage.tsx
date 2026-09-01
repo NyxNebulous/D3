@@ -2,7 +2,6 @@ import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react
 import {
   ArrowRight,
   Bell,
-  Check,
   ChevronRight,
   Grid2x2,
   Home,
@@ -12,7 +11,6 @@ import {
   Plus,
   ReceiptText,
   Search,
-  Send,
   ShoppingCart
 } from "lucide-react";
 import { formatInrFromPaise } from "@d3/shared";
@@ -30,12 +28,6 @@ import { Notice, type NoticeVariant } from "../../components/Notice.js";
 type CustomerOrderPageProps = {
   qrId: string;
   signature: string;
-};
-
-type OtpChallenge = {
-  challengeId: string;
-  expiresAt: string;
-  devOtp?: string;
 };
 
 type NoticeState = {
@@ -82,8 +74,6 @@ export function CustomerOrderPage({ qrId, signature }: CustomerOrderPageProps) {
   const [selectedCategoryId, setSelectedCategoryId] = useState<number | null>(null);
   const [name, setName] = useState("");
   const [mobileNumber, setMobileNumber] = useState("");
-  const [otp, setOtp] = useState("");
-  const [challenge, setChallenge] = useState<OtpChallenge | null>(null);
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<NoticeState | null>(null);
 
@@ -181,59 +171,25 @@ export function CustomerOrderPage({ qrId, signature }: CustomerOrderPageProps) {
     setSelectedCategoryId((current) => current ?? menu[0]?.id ?? null);
   }, [menu]);
 
-  async function requestOtp(event: FormEvent<HTMLFormElement>) {
+  async function loginCustomer(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setBusy(true);
     setNotice(null);
 
     try {
-      const response = await apiPost<OtpChallenge>("/api/auth/customer/request-otp", {
+      const response = await apiPost<SessionContext>("/api/auth/customer/login", {
         name,
         mobileNumber
       });
-      setChallenge(response);
-      setNotice({
-        variant: "info",
-        title: "OTP sent",
-        subtitle: "Check your phone for a 6-digit code."
-      });
-    } catch (error) {
-      setNotice({
-        variant: "error",
-        title: "Could not send OTP",
-        subtitle: error instanceof Error ? error.message : "Please try again."
-      });
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function verifyOtp(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    setBusy(true);
-    setNotice(null);
-
-    try {
-      const response = await apiPost<SessionContext>("/api/auth/customer/verify-otp", {
-        challengeId: challenge?.challengeId,
-        otp
-      });
       setSession(response);
       setTableLabel(response.table.label);
-      setChallenge(null);
-      setOtp("");
       setScreen("home");
       await loadCustomerData();
-      setNotice({
-        variant: "success",
-        title: "Verified",
-        subtitle: "You are ready to order."
-      });
     } catch (error) {
       setNotice({
         variant: "error",
-        title: "Verification failed",
-        subtitle: error instanceof Error ? error.message : "The OTP could not be verified."
+        title: "Could not start order",
+        subtitle: error instanceof Error ? error.message : "Please check your details and try again."
       });
     } finally {
       setBusy(false);
@@ -331,7 +287,7 @@ export function CustomerOrderPage({ qrId, signature }: CustomerOrderPageProps) {
                 <Notice variant={notice.variant} title={notice.title} subtitle={notice.subtitle} />
               ) : null}
 
-              <form onSubmit={requestOtp}>
+              <form onSubmit={loginCustomer}>
                 <div className="field">
                   <label className="field-label" htmlFor="customer-name">
                     Name
@@ -360,42 +316,10 @@ export function CustomerOrderPage({ qrId, signature }: CustomerOrderPageProps) {
                 </div>
 
                 <button className="btn-primary" disabled={busy} type="submit">
-                  <Send aria-hidden="true" size={16} />
-                  Send OTP
+                  Start ordering
+                  <ArrowRight aria-hidden="true" size={16} />
                 </button>
               </form>
-
-              {challenge ? (
-                <form className="otp-form" onSubmit={verifyOtp}>
-                  <div className="divider-label">Verify</div>
-
-                  <div className="field">
-                    <label className="field-label" htmlFor="customer-otp">
-                      Enter OTP
-                    </label>
-                    <input
-                      id="customer-otp"
-                      inputMode="numeric"
-                      maxLength={6}
-                      value={otp}
-                      onChange={(event) => setOtp(event.target.value)}
-                      placeholder="6-digit code"
-                      required
-                    />
-                  </div>
-
-                  {challenge.devOtp ? (
-                    <div className="otp-hint" role="status">
-                      Development OTP: {challenge.devOtp} — disabled in production
-                    </div>
-                  ) : null}
-
-                  <button className="btn-primary" disabled={busy} type="submit">
-                    <Check aria-hidden="true" size={16} />
-                    Verify &amp; continue
-                  </button>
-                </form>
-              ) : null}
             </div>
           </section>
         ) : null}

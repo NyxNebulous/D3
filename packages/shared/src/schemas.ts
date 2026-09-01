@@ -36,6 +36,13 @@ export const qrValidateRequestSchema = z
   })
   .strict();
 
+export const customerLoginSchema = z
+  .object({
+    name: customerNameSchema,
+    mobileNumber: mobileNumberSchema
+  })
+  .strict();
+
 export const requestOtpSchema = z
   .object({
     name: customerNameSchema,
