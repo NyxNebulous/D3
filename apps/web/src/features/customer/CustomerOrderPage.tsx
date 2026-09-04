@@ -3,6 +3,7 @@ import {
   apiGet,
   apiPost,
   apiPut,
+  setAuthToken,
   type Cart,
   type MenuCategory,
   type Order,
@@ -82,6 +83,75 @@ export function CustomerOrderPage({ qrId, signature }: CustomerOrderPageProps) {
     let mounted = true;
 
     async function boot() {
+      // 1. If QR parameters are provided in URL, prioritize validating the scanned table QR!
+      if (qrId && signature) {
+        try {
+          const validated = await apiPost<{
+            token?: string;
+            table: { label: string };
+            sameTableSession?: boolean;
+          }>("/api/qr/validate", {
+            qrId,
+            signature
+          });
+
+          if (!mounted) return;
+
+          // Check if the customer already has an active session for THIS SAME table
+          let isSameTable = validated.sameTableSession;
+          if (isSameTable === undefined) {
+            try {
+              const existing = await apiGet<SessionContext>("/api/auth/customer/session");
+              isSameTable = existing.table.label === validated.table.label;
+              if (isSameTable && mounted) {
+                setSession(existing);
+                setTableLabel(existing.table.label);
+                setScreen("home");
+                await loadCustomerData();
+                return;
+              }
+            } catch {
+              isSameTable = false;
+            }
+          } else if (isSameTable) {
+            try {
+              const existing = await apiGet<SessionContext>("/api/auth/customer/session");
+              if (mounted) {
+                setSession(existing);
+                setTableLabel(existing.table.label);
+                setScreen("home");
+                await loadCustomerData();
+                return;
+              }
+            } catch {
+              isSameTable = false;
+            }
+          }
+
+          // New table or no active session for this table:
+          // Replace auth token with new pre-session token, clear old session state, and land on new table
+          if (validated.token) {
+            setAuthToken(validated.token);
+          }
+          setSession(null);
+          setCart(null);
+          setOrders([]);
+          setTableLabel(validated.table.label);
+          setScreen("landing");
+          return;
+        } catch (error) {
+          if (!mounted) return;
+          setNotice({
+            variant: "error",
+            title: "Invalid QR",
+            subtitle: error instanceof Error ? error.message : "The table QR could not be validated."
+          });
+          setScreen("landing");
+          return;
+        }
+      }
+
+      // 2. If NO QR parameters in URL (e.g. reload on root / without params)
       try {
         const existing = await apiGet<SessionContext>("/api/auth/customer/session");
         if (!mounted) return;
@@ -90,34 +160,13 @@ export function CustomerOrderPage({ qrId, signature }: CustomerOrderPageProps) {
         setTableLabel(existing.table.label);
         setScreen("home");
         await loadCustomerData();
-        return;
       } catch {
-        // no active session
-      }
-
-      if (!qrId || !signature) {
+        if (!mounted) return;
+        setSession(null);
+        setCart(null);
+        setOrders([]);
+        setTableLabel("");
         setScreen("landing");
-        return;
-      }
-
-      try {
-        const validated = await apiPost<{ table: { label: string } }>("/api/qr/validate", {
-          qrId,
-          signature
-        });
-        if (mounted) {
-          setTableLabel(validated.table.label);
-          setScreen("landing");
-        }
-      } catch (error) {
-        if (mounted) {
-          setNotice({
-            variant: "error",
-            title: "Invalid QR",
-            subtitle: error instanceof Error ? error.message : "The table QR could not be validated."
-          });
-          setScreen("landing");
-        }
       }
     }
 
@@ -151,10 +200,13 @@ export function CustomerOrderPage({ qrId, signature }: CustomerOrderPageProps) {
     setNotice(null);
 
     try {
-      const response = await apiPost<SessionContext>("/api/auth/customer/login", {
+      const response = await apiPost<SessionContext & { token?: string }>("/api/auth/customer/login", {
         name,
         mobileNumber
       });
+      if (response.token) {
+        setAuthToken(response.token);
+      }
       setSession(response);
       setTableLabel(response.table.label);
       setScreen("home");
@@ -184,7 +236,7 @@ export function CustomerOrderPage({ qrId, signature }: CustomerOrderPageProps) {
       setNotice({
         variant: "error",
         title: "Cart update failed",
-        subtitle: error instanceof Error ? error.message : "Could not update the cart."
+        subtitle: error instanceof Error ? error.message : "Could not update item quantity."
       });
     } finally {
       setBusy(false);
@@ -221,10 +273,10 @@ export function CustomerOrderPage({ qrId, signature }: CustomerOrderPageProps) {
 
   const tableShortLabel = tableLabel
     ? `T${String(tableLabel).match(/\d+/)?.[0] ?? tableLabel}`
-    : "T1";
+    : "";
   const customerTableText = tableLabel
     ? `Table ${tableLabel.replace(/^Table\s*/i, "")}`
-    : "Table 1";
+    : "";
 
   const showNav = NAV_SCREENS.includes(screen);
 

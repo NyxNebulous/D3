@@ -572,18 +572,33 @@ export async function getOrderById(
 
 export async function getCustomerOrders(
   db: D1Database,
-  customerSessionId: number
+  customerSessionId: number,
+  customerId?: number,
+  diningTableId?: number
 ): Promise<OrderRecord[]> {
-  const orderIdsRes = await db
-    .prepare(
-      `
+  let query = `
+    SELECT id
+    FROM orders
+    WHERE customer_session_id = ?
+  `;
+  const binds: (number | string)[] = [customerSessionId];
+
+  if (customerId && diningTableId) {
+    query = `
       SELECT id
       FROM orders
       WHERE customer_session_id = ?
+         OR (customer_id = ? AND dining_table_id = ? AND datetime(created_at) > datetime('now', '-12 hours'))
       ORDER BY created_at DESC, id DESC
-      `
-    )
-    .bind(customerSessionId)
+    `;
+    binds.push(customerId, diningTableId);
+  } else {
+    query += ` ORDER BY created_at DESC, id DESC`;
+  }
+
+  const orderIdsRes = await db
+    .prepare(query)
+    .bind(...binds)
     .all<{ id: number }>();
 
   const orders = await Promise.all(

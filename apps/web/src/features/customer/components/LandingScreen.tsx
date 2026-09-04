@@ -17,15 +17,23 @@ export function LandingScreen({ customerTableText, onProceed }: LandingScreenPro
           D3
         </div>
         <h1 className="text-[22px] font-bold tracking-wide text-parchment mb-1">D3</h1>
-        <p className="text-[13px] text-clay mb-6">{customerTableText} · Scan confirmed</p>
-        <button
-          className="w-full bg-ember hover:bg-ember-hover active:bg-ember-deep active:scale-[0.98] text-[#1a0d06] rounded-[14px] py-3.5 px-5 text-[15px] font-bold flex items-center justify-center gap-2 transition cursor-pointer"
-          onClick={onProceed}
-          type="button"
-        >
-          Order food
-          <ArrowRight aria-hidden="true" size={16} />
-        </button>
+        <p className="text-[13px] text-clay mb-6">
+          {customerTableText ? `${customerTableText} · Scan confirmed` : "Scan table QR code"}
+        </p>
+        {customerTableText ? (
+          <button
+            className="w-full bg-ember hover:bg-ember-hover active:bg-ember-deep active:scale-[0.98] text-[#1a0d06] rounded-[14px] py-3.5 px-5 text-[15px] font-bold flex items-center justify-center gap-2 transition cursor-pointer"
+            onClick={onProceed}
+            type="button"
+          >
+            Order food
+            <ArrowRight aria-hidden="true" size={16} />
+          </button>
+        ) : (
+          <div className="text-[13px] text-clay bg-surface-1 border border-hairline rounded-xl p-3 text-center leading-relaxed">
+            Please scan the QR code on your table to view the menu and place orders.
+          </div>
+        )}
       </div>
     </section>
   );

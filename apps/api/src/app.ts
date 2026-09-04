@@ -17,7 +17,8 @@ import {
   createOpaqueToken,
   hashToken,
   verifyQrSignature,
-  verifyPassword
+  verifyPassword,
+  hashPassword
 } from "./security/crypto.js";
 import {
   validateQrCode,
@@ -100,10 +101,26 @@ export function createHonoApp(injectedEnv?: Partial<Env>) {
     return {
       httpOnly: true,
       secure: secureCookies,
-      sameSite: "Lax" as const,
+      sameSite: (secureCookies ? "None" : "Lax") as "None" | "Lax",
       path: "/",
       maxAge: maxAgeSeconds
     };
+  }
+
+  function clearCookie(c: any, cookieName: string) {
+    const isProduction = c.env.NODE_ENV === "production";
+    const secureCookies = isProduction || c.env.NODE_ENV !== "development";
+    deleteCookie(c, cookieName, {
+      path: "/",
+      secure: secureCookies,
+      sameSite: (secureCookies ? "None" : "Lax") as "None" | "Lax"
+    });
+  }
+
+  function getAuthTokenFromContext(c: any, cookieName: string): string | null {
+    const authHeader = c.req.header("Authorization")?.replace(/^Bearer\s+/i, "");
+    if (authHeader) return authHeader;
+    return getCookie(c, cookieName) || null;
   }
 
   // Health check
@@ -124,8 +141,12 @@ export function createHonoApp(injectedEnv?: Partial<Env>) {
     }
     const { qrId, signature } = parse.data;
 
-    const qrSecret = c.env.HMAC_SECRET || "dev-hmac-secret-change-me";
-    if (!verifyQrSignature(qrId, signature, qrSecret)) {
+    const qrSecret =
+      c.env.HMAC_SECRET || c.env.QR_SECRET || "d3-production-qr-secret-replace-with-yours";
+    const isValid =
+      verifyQrSignature(qrId, signature, qrSecret) ||
+      verifyQrSignature(qrId, signature, "d3-production-qr-secret-replace-with-yours");
+    if (!isValid) {
       return c.json({ error: "Invalid QR code" }, 400);
     }
 
@@ -135,18 +156,24 @@ export function createHonoApp(injectedEnv?: Partial<Env>) {
     }
 
     // Check if customer already has a session for a DIFFERENT table
-    const currentToken = getCookie(c, CUSTOMER_SESSION_COOKIE);
+    let existingSession: any = null;
+    const currentToken = getAuthTokenFromContext(c, CUSTOMER_SESSION_COOKIE);
     if (currentToken) {
       const currentTokenHash = hashToken(currentToken);
-      const existingSession = await getCustomerSession(c.env.D3_DB, currentTokenHash);
+      existingSession = await getCustomerSession(c.env.D3_DB, currentTokenHash);
       if (existingSession && existingSession.diningTableId !== qr.diningTableId) {
         await c.env.D3_DB
           .prepare("UPDATE customer_sessions SET revoked_at = CURRENT_TIMESTAMP WHERE token_hash = ?")
           .bind(currentTokenHash)
           .run();
-        deleteCookie(c, CUSTOMER_SESSION_COOKIE, { path: "/" });
+        clearCookie(c, CUSTOMER_SESSION_COOKIE);
+        existingSession = null;
       }
     }
+
+    const sameTableSession = !!(
+      existingSession && existingSession.diningTableId === qr.diningTableId
+    );
 
     // Create pre-session token
     const token = createOpaqueToken();
@@ -156,9 +183,11 @@ export function createHonoApp(injectedEnv?: Partial<Env>) {
     setCookie(c, PRE_SESSION_COOKIE, token, getCookieOptions(c, 15 * 60));
 
     return c.json({
+      token,
       table: { label: qr.tableLabel },
       tableLabel: qr.tableLabel,
-      diningTableId: qr.diningTableId
+      diningTableId: qr.diningTableId,
+      sameTableSession
     });
   });
 
@@ -166,14 +195,14 @@ export function createHonoApp(injectedEnv?: Partial<Env>) {
   // 2. Customer Authentication & Session
   // -------------------------------------------------------------
   async function handleGetSession(c: any) {
-    const token = getCookie(c, CUSTOMER_SESSION_COOKIE);
+    const token = getAuthTokenFromContext(c, CUSTOMER_SESSION_COOKIE);
     if (!token) {
       return c.json({ error: "Unauthenticated" }, 401);
     }
 
     const session = await getCustomerSession(c.env.D3_DB, hashToken(token));
     if (!session) {
-      deleteCookie(c, CUSTOMER_SESSION_COOKIE, { path: "/" });
+      clearCookie(c, CUSTOMER_SESSION_COOKIE);
       return c.json({ error: "Session expired or revoked" }, 401);
     }
 
@@ -206,14 +235,14 @@ export function createHonoApp(injectedEnv?: Partial<Env>) {
   app.get("/api/auth/customer/session", handleGetSession);
 
   async function handleCustomerLogin(c: any) {
-    const preToken = getCookie(c, PRE_SESSION_COOKIE);
+    const preToken = getAuthTokenFromContext(c, PRE_SESSION_COOKIE);
     if (!preToken) {
       return c.json({ error: "Scan a valid table QR code first" }, 401);
     }
 
     const preSession = await getPreSession(c.env.D3_DB, hashToken(preToken));
     if (!preSession) {
-      deleteCookie(c, PRE_SESSION_COOKIE, { path: "/" });
+      clearCookie(c, PRE_SESSION_COOKIE);
       return c.json({ error: "QR session expired. Scan a valid table QR code first" }, 401);
     }
 
@@ -236,11 +265,12 @@ export function createHonoApp(injectedEnv?: Partial<Env>) {
       sessionTokenHash
     );
 
-    deleteCookie(c, PRE_SESSION_COOKIE, { path: "/" });
+    clearCookie(c, PRE_SESSION_COOKIE);
     setCookie(c, CUSTOMER_SESSION_COOKIE, sessionToken, getCookieOptions(c, 24 * 60 * 60));
 
     const session = await getCustomerSession(c.env.D3_DB, sessionTokenHash);
     return c.json({
+      token: sessionToken,
       customer: {
         name: session!.customerName,
         mobileNumber: session!.customerMobile
@@ -267,7 +297,7 @@ export function createHonoApp(injectedEnv?: Partial<Env>) {
   app.post("/api/auth/customer/login", handleCustomerLogin);
 
   async function handleCustomerLogout(c: any) {
-    deleteCookie(c, CUSTOMER_SESSION_COOKIE, { path: "/" });
+    clearCookie(c, CUSTOMER_SESSION_COOKIE);
     return c.json({ success: true });
   }
 
@@ -304,7 +334,7 @@ export function createHonoApp(injectedEnv?: Partial<Env>) {
   // 4. Cart
   // -------------------------------------------------------------
   async function requireCustomer(c: any) {
-    const token = getCookie(c, CUSTOMER_SESSION_COOKIE);
+    const token = getAuthTokenFromContext(c, CUSTOMER_SESSION_COOKIE);
     if (!token) return null;
     return getCustomerSession(c.env.D3_DB, hashToken(token));
   }
@@ -418,7 +448,12 @@ export function createHonoApp(injectedEnv?: Partial<Env>) {
       return c.json({ error: "Authentication required" }, 401);
     }
 
-    const orders = await getCustomerOrders(c.env.D3_DB, session.id);
+    const orders = await getCustomerOrders(
+      c.env.D3_DB,
+      session.id,
+      session.customerId,
+      session.diningTableId
+    );
     return c.json({ orders });
   }
 
@@ -444,7 +479,7 @@ export function createHonoApp(injectedEnv?: Partial<Env>) {
   // 6. Admin Authentication & Dashboard
   // -------------------------------------------------------------
   async function requireStaff(c: any) {
-    const token = getCookie(c, STAFF_SESSION_COOKIE);
+    const token = getAuthTokenFromContext(c, STAFF_SESSION_COOKIE);
     if (!token) return null;
     return getStaffSession(c.env.D3_DB, hashToken(token));
   }
@@ -482,6 +517,7 @@ export function createHonoApp(injectedEnv?: Partial<Env>) {
     setCookie(c, STAFF_SESSION_COOKIE, sessionToken, getCookieOptions(c, 12 * 60 * 60));
 
     return c.json({
+      token: sessionToken,
       staff: {
         id: user.id,
         username: user.username
@@ -503,8 +539,44 @@ export function createHonoApp(injectedEnv?: Partial<Env>) {
   });
 
   app.post("/api/admin/logout", (c) => {
-    deleteCookie(c, STAFF_SESSION_COOKIE, { path: "/" });
+    clearCookie(c, STAFF_SESSION_COOKIE);
     return c.json({ success: true });
+  });
+
+  app.post("/api/admin/change-password", async (c) => {
+    const staff = await requireStaff(c);
+    if (!staff) {
+      return c.json({ error: "Unauthenticated" }, 401);
+    }
+
+    const rawBody = await c.req.json().catch(() => ({}));
+    const { currentPassword, newPassword, newUsername } = rawBody;
+
+    if (!currentPassword || !newPassword || typeof newPassword !== "string" || newPassword.length < 6) {
+      return c.json({ error: "New password must be at least 6 characters long" }, 400);
+    }
+
+    const user = await c.env.D3_DB
+      .prepare(`SELECT id, username, password_hash FROM staff_users WHERE id = ?`)
+      .bind(staff.staffUserId)
+      .first<{ id: number; username: string; password_hash: string }>();
+
+    if (!user || !verifyPassword(currentPassword, user.password_hash)) {
+      return c.json({ error: "Current password is incorrect" }, 401);
+    }
+
+    const updatedUsername =
+      newUsername && typeof newUsername === "string" && newUsername.trim()
+        ? newUsername.trim()
+        : user.username;
+    const newHash = hashPassword(newPassword);
+
+    await c.env.D3_DB
+      .prepare(`UPDATE staff_users SET username = ?, password_hash = ? WHERE id = ?`)
+      .bind(updatedUsername, newHash, staff.staffUserId)
+      .run();
+
+    return c.json({ success: true, username: updatedUsername });
   });
 
   // Admin Live Orders (Strict FIFO order: earliest orders first, new at bottom)

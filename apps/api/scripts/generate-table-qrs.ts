@@ -7,7 +7,9 @@ function signQrId(qrId: string, secret: string): string {
 const frontendBaseUrl =
   process.env.FRONTEND_URL ?? "https://d3-restaurant.pages.dev";
 const qrSecret =
-  process.env.QR_SECRET ?? "d3-production-qr-secret-replace-with-yours";
+  process.env.HMAC_SECRET ??
+  process.env.QR_SECRET ??
+  "d3-production-qr-secret-replace-with-yours";
 const tableCount = Number(process.env.TABLE_COUNT ?? "10");
 
 console.log("\n=======================================================");

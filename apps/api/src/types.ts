@@ -35,6 +35,7 @@ export interface D1Database {
 export type Env = {
   D3_DB: D1Database;
   HMAC_SECRET?: string;
+  QR_SECRET?: string;
   SESSION_SECRET?: string;
   CORS_ORIGIN?: string;
   NODE_ENV?: string;

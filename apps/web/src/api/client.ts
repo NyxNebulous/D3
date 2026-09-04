@@ -105,22 +105,55 @@ export async function apiDelete<T>(path: string): Promise<T> {
   });
 }
 
+let activeAuthToken: string | null = null;
+
+export function setAuthToken(token: string | null | undefined) {
+  activeAuthToken = token ?? null;
+  if (token) {
+    try {
+      sessionStorage.setItem("d3_auth_token", token);
+    } catch {}
+  } else {
+    try {
+      sessionStorage.removeItem("d3_auth_token");
+    } catch {}
+  }
+}
+
+export function getAuthToken(): string | null {
+  if (activeAuthToken) return activeAuthToken;
+  try {
+    activeAuthToken = sessionStorage.getItem("d3_auth_token");
+  } catch {}
+  return activeAuthToken;
+}
+
+export function clearAuthToken() {
+  setAuthToken(null);
+}
+
 async function apiRequest<T>(path: string, options: RequestOptions = {}): Promise<T> {
+  const token = getAuthToken();
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    ...(options.headers as Record<string, string> || {})
+  };
+
   const response = await fetch(`${apiBaseUrl}${path}`, {
     ...options,
     credentials: "include",
-    headers: {
-      "Content-Type": "application/json",
-      ...options.headers
-    },
+    headers,
     body: options.body === undefined ? undefined : JSON.stringify(options.body)
   });
 
   if (!response.ok) {
-    const payload = (await response.json().catch(() => null)) as
-      | { error?: { message?: string } }
-      | null;
-    throw new Error(payload?.error?.message ?? "Request failed");
+    const payload = (await response.json().catch(() => null)) as any;
+    const errorMessage =
+      typeof payload?.error === "string"
+        ? payload.error
+        : (payload?.error?.message ?? "Request failed");
+    throw new Error(errorMessage);
   }
 
   if (response.status === 204) {
