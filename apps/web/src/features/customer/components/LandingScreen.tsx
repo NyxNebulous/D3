@@ -1,12 +1,14 @@
 import { ArrowRight } from "lucide-react";
 import { ThemeToggle } from "../../../components/ThemeToggle.js";
+import { Notice, type NoticeVariant } from "../../../components/Notice.js";
 
 type LandingScreenProps = {
   customerTableText: string;
   onProceed: () => void;
+  notice?: { variant: NoticeVariant; title: string; subtitle: string } | null;
 };
 
-export function LandingScreen({ customerTableText, onProceed }: LandingScreenProps) {
+export function LandingScreen({ customerTableText, onProceed, notice }: LandingScreenProps) {
   return (
     <section className="flex flex-col flex-1 min-h-dvh justify-center items-center overflow-y-auto bg-[radial-gradient(circle_at_30%_20%,rgba(255,107,53,0.18),transparent_55%),radial-gradient(circle_at_75%_75%,rgba(255,107,53,0.1),transparent_50%),theme(colors.ink)] p-5 relative">
       <div className="absolute top-5 right-5">
@@ -20,6 +22,11 @@ export function LandingScreen({ customerTableText, onProceed }: LandingScreenPro
         <p className="text-[13px] text-clay mb-6">
           {customerTableText ? `${customerTableText} · Scan confirmed` : "Scan table QR code"}
         </p>
+        {notice ? (
+          <div className="w-full mb-4">
+            <Notice variant={notice.variant} title={notice.title} subtitle={notice.subtitle} />
+          </div>
+        ) : null}
         {customerTableText ? (
           <button
             className="w-full bg-ember hover:bg-ember-hover active:bg-ember-deep active:scale-[0.98] text-[#1a0d06] rounded-[14px] py-3.5 px-5 text-[15px] font-bold flex items-center justify-center gap-2 transition cursor-pointer"

@@ -375,6 +375,7 @@ export function CustomerOrderPage({ qrId, signature }: CustomerOrderPageProps) {
           <LandingScreen
             customerTableText={customerTableText}
             onProceed={() => setScreen(session ? "home" : "auth")}
+            notice={notice}
           />
         ) : null}
 

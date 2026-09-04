@@ -1,4 +1,8 @@
-const apiBaseUrl = import.meta.env.VITE_API_BASE_URL ?? "";
+const apiBaseUrl =
+  import.meta.env.VITE_API_BASE_URL ||
+  (typeof window !== "undefined" && window.location.hostname.includes("pages.dev")
+    ? "https://d3-api.nyxnebulous7.workers.dev"
+    : "");
 
 export type MenuItem = {
   id: number;
