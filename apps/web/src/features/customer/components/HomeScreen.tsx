@@ -1,4 +1,4 @@
-import { Bell, FireExtinguisher, FireExtinguisherIcon, Flame, FlameIcon, FlameKindling, Grid2x2, ReceiptText, ShoppingCart } from "lucide-react";
+import { Bell, FireExtinguisher, FireExtinguisherIcon, Flame, FlameIcon, FlameKindling, Grid2x2, Heart, ReceiptText, ShoppingCart } from "lucide-react";
 import { formatInrFromPaise } from "@d3/shared";
 import type { MenuCategory, Order, SessionContext } from "../../../api/client.js";
 
@@ -111,6 +111,21 @@ export function HomeScreen({
             <div className="text-[12.5px] text-clay leading-snug">Request assistance</div>
           </div>
         </button>
+      </div>
+
+      {/* Engraved Morse Code: "made by nyx" */}
+      <div className="flex-1 flex flex-col items-center justify-center py-54 pb-12 select-none">
+        <span
+          className="font-mono text-[12px] font-semibold tracking-[0.32em] text-clay/15 hover:text-parchment/80 transition-colors cursor-default"
+        >
+          &nbsp;&nbsp; __ ·_ _·· · &nbsp;&nbsp; _··· _·__ &nbsp;&nbsp; 
+        </span>
+        <span
+          className="font-mono text-[12px] font-semibold tracking-[0.32em] text-clay/15 hover:text-parchment/80 transition-colors cursor-default"
+        >
+          &nbsp;&nbsp; _· _·__ _··_ &nbsp;&nbsp; 
+        </span>
+        <Heart className="mt-2 text-clay/5"/>
       </div>
     </section>
   );
