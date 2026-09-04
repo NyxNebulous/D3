@@ -4,7 +4,7 @@ import express from "express";
 import helmet from "helmet";
 import type { AppConfig } from "../config/env.js";
 import type { Database } from "../db/database.js";
-import { createOriginGuard } from "../middleware/originGuard.js";
+import { createOriginGuard, isAllowedOrigin } from "../middleware/originGuard.js";
 import { createErrorHandler, notFoundHandler } from "../middleware/errors.js";
 import { createAdminRouter } from "../modules/admin/admin.routes.js";
 import { createAuthRouter } from "../modules/auth/auth.routes.js";
@@ -20,7 +20,13 @@ export function createApp(database: Database, config: AppConfig) {
   app.use(helmet());
   app.use(
     cors({
-      origin: config.corsOrigin,
+      origin: (origin, callback) => {
+        if (!origin || isAllowedOrigin(origin, config.corsOrigin)) {
+          callback(null, true);
+        } else {
+          callback(null, false);
+        }
+      },
       credentials: true
     })
   );

@@ -118,7 +118,7 @@ export function HomeScreen({
       </div>
 
       {/* Engraved Morse Code: "made by nyx" */}
-      <div className="flex-1 flex flex-col items-center justify-center py-54 pb-12 select-none">
+      <div className="flex-1 flex flex-col items-center justify-center select-none">
         <span
           className="font-mono text-[12px] font-semibold tracking-[0.32em] text-clay/15 hover:text-parchment/80 transition-colors cursor-default"
         >
