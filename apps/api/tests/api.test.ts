@@ -1,33 +1,163 @@
-import request from "supertest";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 import { createTestConfig, type AppConfig } from "../src/config/env.js";
-import { openDatabase, type Database } from "../src/db/database.js";
+import { openDatabase, createSqliteD1Adapter, type Database } from "../src/db/database.js";
 import { runMigrations } from "../src/db/migrations.js";
-import { createApp } from "../src/app/createApp.js";
-import { resetRateLimitsForTests } from "../src/middleware/rateLimit.js";
+import { createHonoApp } from "../src/app.js";
 import { hashPassword, signQrId } from "../src/security/crypto.js";
 
 type TestServer = {
   config: AppConfig;
   database: Database;
-  app: ReturnType<typeof createApp>;
+  app: ReturnType<typeof createHonoApp>;
   qrId: string;
   qrSignature: string;
   menuItemId: number;
 };
 
-describe("D3 API V1", () => {
-  beforeEach(() => {
-    resetRateLimitsForTests();
-  });
+type TestResponse = {
+  status: number;
+  body: any;
+  headers: Headers;
+};
 
-  afterEach(() => {
-    resetRateLimitsForTests();
-  });
+type RequestBuilder = {
+  set(key: string, value: string): RequestBuilder;
+  send(body: any): RequestBuilder;
+  expect(expectedStatus: number): Promise<TestResponse>;
+  then<TResult1 = TestResponse, TResult2 = never>(
+    onfulfilled?: ((value: TestResponse) => TResult1 | PromiseLike<TResult1>) | null,
+    onrejected?: ((reason: any) => TResult2 | PromiseLike<TResult2>) | null
+  ): Promise<TResult1 | TResult2>;
+};
 
+class HonoTestAgent {
+  private cookies = new Map<string, string>();
+
+  constructor(private app: ReturnType<typeof createHonoApp>) {}
+
+  private createRequest(method: string, path: string): RequestBuilder {
+    const headers: Record<string, string> = {};
+    let bodyPayload: any = undefined;
+
+    const execute = async (expectedStatus?: number): Promise<TestResponse> => {
+      if (this.cookies.size > 0) {
+        const cookieHeader = Array.from(this.cookies.entries())
+          .map(([k, v]) => `${k}=${v}`)
+          .join("; ");
+        headers["cookie"] = cookieHeader;
+      }
+
+      let bodyInit: string | undefined = undefined;
+      if (bodyPayload !== undefined) {
+        bodyInit = JSON.stringify(bodyPayload);
+        if (!headers["content-type"]) {
+          headers["content-type"] = "application/json";
+        }
+      }
+
+      const res = await this.app.request(path, {
+        method,
+        headers,
+        body: bodyInit
+      });
+
+      // Capture cookies
+      const setCookies = res.headers.getSetCookie ? res.headers.getSetCookie() : [];
+      if (setCookies.length > 0) {
+        for (const sc of setCookies) {
+          const [pair] = sc.split(";");
+          const eq = pair.indexOf("=");
+          if (eq !== -1) {
+            const k = pair.substring(0, eq).trim();
+            const v = pair.substring(eq + 1).trim();
+            if (v === "" || sc.includes("Max-Age=0") || sc.includes("Expires=Thu, 01 Jan 1970")) {
+              this.cookies.delete(k);
+            } else {
+              this.cookies.set(k, v);
+            }
+          }
+        }
+      } else {
+        const raw = res.headers.get("set-cookie");
+        if (raw) {
+          for (const part of raw.split(/,(?=[^;]+=[^;]+)/)) {
+            const [pair] = part.split(";");
+            const eq = pair.indexOf("=");
+            if (eq !== -1) {
+              const k = pair.substring(0, eq).trim();
+              const v = pair.substring(eq + 1).trim();
+              if (v === "" || part.includes("Max-Age=0") || part.includes("Expires=Thu, 01 Jan 1970")) {
+                this.cookies.delete(k);
+              } else {
+                this.cookies.set(k, v);
+              }
+            }
+          }
+        }
+      }
+
+      const text = await res.text();
+      let parsedBody: any = null;
+      try {
+        parsedBody = JSON.parse(text);
+      } catch {
+        parsedBody = text;
+      }
+
+      if (expectedStatus !== undefined && res.status !== expectedStatus) {
+        throw new Error(
+          `Expected status ${expectedStatus} but got ${res.status}. Body: ${JSON.stringify(parsedBody)}`
+        );
+      }
+
+      return {
+        status: res.status,
+        body: parsedBody,
+        headers: res.headers
+      };
+    };
+
+    const builder: RequestBuilder = {
+      set(key: string, value: string) {
+        headers[key.toLowerCase()] = value;
+        return builder;
+      },
+      send(body: any) {
+        bodyPayload = body;
+        return builder;
+      },
+      expect(expectedStatus: number) {
+        return execute(expectedStatus);
+      },
+      then(onfulfilled, onrejected) {
+        return execute(200).then(onfulfilled, onrejected);
+      }
+    };
+
+    return builder;
+  }
+
+  get(path: string) {
+    return this.createRequest("GET", path);
+  }
+
+  post(path: string) {
+    return this.createRequest("POST", path);
+  }
+
+  put(path: string) {
+    return this.createRequest("PUT", path);
+  }
+
+  delete(path: string) {
+    return this.createRequest("DELETE", path);
+  }
+}
+
+describe("D3 API V1 (Hono Unified Backend)", () => {
   it("rejects QR signature tampering before establishing table context", async () => {
     const server = createTestServer();
-    const agent = request.agent(server.app);
+    const agent = new HonoTestAgent(server.app);
 
     await agent
       .post("/api/qr/validate")
@@ -44,7 +174,7 @@ describe("D3 API V1", () => {
 
   it("creates orders with server-derived totals and offline V1 states", async () => {
     const server = createTestServer();
-    const agent = request.agent(server.app);
+    const agent = new HonoTestAgent(server.app);
 
     await authenticateCustomer(server, agent);
 
@@ -80,7 +210,7 @@ describe("D3 API V1", () => {
 
   it("does not allow a customer session to mark offline payment", async () => {
     const server = createTestServer();
-    const agent = request.agent(server.app);
+    const agent = new HonoTestAgent(server.app);
 
     await authenticateCustomer(server, agent);
     await agent
@@ -102,8 +232,8 @@ describe("D3 API V1", () => {
 
   it("allows staff to mark orders prepared and paid independently", async () => {
     const server = createTestServer();
-    const customerAgent = request.agent(server.app);
-    const adminAgent = request.agent(server.app);
+    const customerAgent = new HonoTestAgent(server.app);
+    const adminAgent = new HonoTestAgent(server.app);
 
     await authenticateCustomer(server, customerAgent);
     await customerAgent
@@ -142,8 +272,8 @@ describe("D3 API V1", () => {
 
   it("returns admin orders in FIFO sequence (earliest orders first, new orders at bottom)", async () => {
     const server = createTestServer();
-    const customerAgent = request.agent(server.app);
-    const adminAgent = request.agent(server.app);
+    const customerAgent = new HonoTestAgent(server.app);
+    const adminAgent = new HonoTestAgent(server.app);
 
     await authenticateCustomer(server, customerAgent);
     await customerAgent
@@ -186,7 +316,7 @@ describe("D3 API V1", () => {
 
   it("supports veg and non-veg menu metadata", async () => {
     const server = createTestServer();
-    const adminAgent = request.agent(server.app);
+    const adminAgent = new HonoTestAgent(server.app);
 
     await adminAgent.post("/api/admin/login").send({ username: "manager", password: "manager-password" }).expect(200);
 
@@ -217,7 +347,7 @@ describe("D3 API V1", () => {
 
   it("invalidates a customer session when they scan a different table QR", async () => {
     const server = createTestServer();
-    const agent = request.agent(server.app);
+    const agent = new HonoTestAgent(server.app);
 
     await authenticateCustomer(server, agent);
 
@@ -246,7 +376,7 @@ describe("D3 API V1", () => {
 
   it("authenticates a customer directly with name and mobile number after table QR validation", async () => {
     const server = createTestServer();
-    const agent = request.agent(server.app);
+    const agent = new HonoTestAgent(server.app);
 
     // Rejects before QR scan
     await agent
@@ -289,7 +419,16 @@ describe("D3 API V1", () => {
       .prepare("INSERT INTO table_qr_codes (qr_identifier, dining_table_id) VALUES (?, ?)")
       .run(qrId, Number(table.lastInsertRowid));
 
-    const agent = request.agent(createApp(database, config));
+    const d1Database = createSqliteD1Adapter(database);
+    const app = createHonoApp({
+      D3_DB: d1Database,
+      HMAC_SECRET: config.qrSecret,
+      SESSION_SECRET: config.sessionSecret,
+      CORS_ORIGIN: config.corsOrigin,
+      NODE_ENV: "production"
+    });
+
+    const agent = new HonoTestAgent(app);
 
     await agent
       .post("/api/qr/validate")
@@ -334,10 +473,19 @@ function createTestServer(): TestServer {
     .prepare("INSERT INTO staff_users (username, password_hash) VALUES (?, ?)")
     .run("manager", hashPassword("manager-password"));
 
+  const d1Database = createSqliteD1Adapter(database);
+  const app = createHonoApp({
+    D3_DB: d1Database,
+    HMAC_SECRET: config.qrSecret,
+    SESSION_SECRET: config.sessionSecret,
+    CORS_ORIGIN: config.corsOrigin,
+    NODE_ENV: config.nodeEnv
+  });
+
   return {
     config,
     database,
-    app: createApp(database, config),
+    app,
     qrId,
     qrSignature: signQrId(qrId, config.qrSecret),
     menuItemId: Number(item.lastInsertRowid)
@@ -346,7 +494,7 @@ function createTestServer(): TestServer {
 
 async function authenticateCustomer(
   server: TestServer,
-  agent: ReturnType<typeof request.agent>
+  agent: HonoTestAgent
 ): Promise<void> {
   await agent
     .post("/api/qr/validate")
@@ -358,4 +506,5 @@ async function authenticateCustomer(
     .send({ name: "Asha", mobileNumber: "+919876543210" })
     .expect(200);
 }
+
 
