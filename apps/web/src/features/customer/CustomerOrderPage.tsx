@@ -56,6 +56,15 @@ export function CustomerOrderPage({ qrId, signature }: CustomerOrderPageProps) {
   const cartCount = cart?.items.reduce((sum, item) => sum + item.quantity, 0) ?? 0;
   const cartTotal = cart?.totalPaise ?? 0;
 
+  // Auto-dismiss notice after 4 seconds
+  useEffect(() => {
+    if (!notice) return;
+    const timer = setTimeout(() => {
+      setNotice(null);
+    }, 4000);
+    return () => clearTimeout(timer);
+  }, [notice]);
+
   const loadCustomerData = useCallback(async () => {
     const [menuResponse, cartResponse, ordersResponse] = await Promise.all([
       apiGet<{ categories: MenuCategory[] }>("/api/menu"),

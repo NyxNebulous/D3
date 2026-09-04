@@ -96,6 +96,15 @@ export function AdminPage() {
     void boot();
   }, []);
 
+  // Auto-dismiss notice toast after 3.5 seconds
+  useEffect(() => {
+    if (!notice) return;
+    const timer = setTimeout(() => {
+      setNotice(null);
+    }, 3500);
+    return () => clearTimeout(timer);
+  }, [notice]);
+
   // Auto-refresh orders every 30 seconds & on tab visibility change
   useEffect(() => {
     if (!staff) return;
@@ -451,8 +460,13 @@ export function AdminPage() {
       ) : null}
 
       {notice ? (
-        <div className="fixed bottom-5 right-5 w-[min(360px,calc(100%-40px))] z-50">
-          <Notice variant={notice.variant} title={notice.title} subtitle={notice.subtitle} />
+        <div className="fixed top-4 right-4 z-50 w-[min(380px,calc(100%-32px))] shadow-2xl">
+          <Notice
+            variant={notice.variant}
+            title={notice.title}
+            subtitle={notice.subtitle}
+            onDismiss={() => setNotice(null)}
+          />
         </div>
       ) : null}
     </div>
