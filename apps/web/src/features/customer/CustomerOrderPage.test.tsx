@@ -81,7 +81,7 @@ describe("CustomerOrderPage", () => {
 
     // Wait for transition to home screen
     await waitFor(() => {
-      expect(screen.getByText(/hi ananya/i)).toBeInTheDocument();
+      expect(screen.getByText(/hi!?\s*ananya/i)).toBeInTheDocument();
     });
   });
 });

@@ -111,7 +111,7 @@ export function createOrdersRouter(database: Database): Router {
           0
         );
 
-        const publicOrderNumber = createPublicOrderNumber();
+        const publicOrderNumber = createPublicOrderNumber(database);
         const insertOrder = database
           .prepare(
             `
@@ -441,8 +441,19 @@ function readPositiveId(value: string | string[] | undefined): number {
   return id;
 }
 
-function createPublicOrderNumber(): string {
-  const date = new Date().toISOString().slice(0, 10).replaceAll("-", "");
-  const suffix = randomBytes(4).toString("hex").toUpperCase();
-  return `D3-${date}-${suffix}`;
+function createPublicOrderNumber(database: Database): string {
+  const row = database
+    .prepare("SELECT COALESCE(MAX(id), 0) + 1 AS nextId FROM orders")
+    .get() as { nextId: number };
+  let candidateNumber = 100 + (row?.nextId ?? 1);
+  while (true) {
+    const candidate = `#${candidateNumber}`;
+    const exists = database
+      .prepare("SELECT 1 FROM orders WHERE public_order_number = ?")
+      .get(candidate);
+    if (!exists) {
+      return candidate;
+    }
+    candidateNumber++;
+  }
 }
