@@ -1,10 +1,14 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { clearAuthToken } from "../../api/client.js";
 import { CustomerOrderPage } from "./CustomerOrderPage.js";
 
 describe("CustomerOrderPage", () => {
   beforeEach(() => {
+    cleanup();
     vi.restoreAllMocks();
+    sessionStorage.clear();
+    clearAuthToken();
   });
 
   it("renders the direct login form with Name and Mobile number and starts ordering", async () => {
@@ -176,6 +180,128 @@ describe("CustomerOrderPage", () => {
     // Should stay directly on home screen for Table 1 without needing re-login
     await waitFor(() => {
       expect(screen.getByText(/hi!?\s*rohan/i)).toBeInTheDocument();
+    });
+  });
+
+  it("optimistically updates item quantity immediately without waiting for server response", async () => {
+    let resolveCartPut: (val: Response) => void;
+    const cartPutPromise = new Promise<Response>((resolve) => {
+      resolveCartPut = resolve;
+    });
+
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      const method = init?.method ?? "GET";
+
+      if (url.includes("/api/auth/customer/session")) {
+        return new Response(
+          JSON.stringify({
+            customer: { name: "Rohan", mobileNumber: "+919811122233" },
+            table: { label: "Table 1" }
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } }
+        );
+      }
+
+      if (url.includes("/api/menu")) {
+        return new Response(
+          JSON.stringify({
+            categories: [
+              {
+                id: 1,
+                name: "Mains",
+                sortOrder: 1,
+                items: [
+                  {
+                    id: 42,
+                    categoryId: 1,
+                    name: "Paneer Butter Masala",
+                    pricePaise: 24000,
+                    isVeg: true,
+                    sortOrder: 1
+                  }
+                ]
+              }
+            ]
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } }
+        );
+      }
+
+      if (url.includes("/api/cart") && method === "PUT") {
+        // Return unresolved promise so server response is deliberately delayed
+        return cartPutPromise;
+      }
+
+      if (url.includes("/api/cart")) {
+        return new Response(JSON.stringify({ cart: { id: 1, items: [], totalPaise: 0 } }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" }
+        });
+      }
+
+      if (url.includes("/api/orders/current") || url.includes("/api/customer/orders")) {
+        return new Response(JSON.stringify({ orders: [] }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" }
+        });
+      }
+
+      return new Response("Not found", { status: 404 });
+    });
+
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<CustomerOrderPage qrId="" signature="" />);
+
+    // Wait for home screen
+    await waitFor(() => {
+      expect(screen.getByText(/hi!?\s*rohan/i)).toBeInTheDocument();
+    });
+
+    // Navigate to menu
+    const menuButtons = screen.getAllByRole("button", { name: /menu/i });
+    fireEvent.click(menuButtons[0]!);
+
+    // Find "ADD +" button for Paneer Butter Masala
+    const addButton = await screen.findByRole("button", { name: /add paneer butter masala/i });
+    expect(addButton).toBeInTheDocument();
+
+    // Click ADD +
+    fireEvent.click(addButton);
+
+    // EVEN THOUGH PUT /api/cart/items HAS NOT RESOLVED YET:
+    // Quantity stepper, floating cart, and nav badge must update immediately (0ms optimistic feedback)
+    expect(screen.getAllByText("1").length).toBeGreaterThanOrEqual(1);
+    expect(screen.getByRole("button", { name: /increase paneer butter masala/i })).toBeInTheDocument();
+
+    // Now resolve the server response
+    resolveCartPut!(
+      new Response(
+        JSON.stringify({
+          cart: {
+            id: 1,
+            items: [
+              {
+                menuItemId: 42,
+                name: "Paneer Butter Masala",
+                categoryName: "Mains",
+                isVeg: true,
+                quantity: 1,
+                unitPricePaise: 24000,
+                lineTotalPaise: 24000
+              }
+            ],
+            totalPaise: 24000,
+            currency: "INR"
+          }
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } }
+      )
+    );
+
+    await waitFor(() => {
+      expect(screen.getAllByText("1").length).toBeGreaterThanOrEqual(1);
     });
   });
 });

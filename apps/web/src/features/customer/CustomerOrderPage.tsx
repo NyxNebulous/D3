@@ -1,10 +1,11 @@
-import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import {
   apiGet,
   apiPost,
   apiPut,
   setAuthToken,
   type Cart,
+  type CartItem,
   type MenuCategory,
   type Order,
   type SessionContext
@@ -222,30 +223,113 @@ export function CustomerOrderPage({ qrId, signature }: CustomerOrderPageProps) {
     }
   }
 
+  const latestTargetQtyRef = useRef<Map<number, number>>(new Map());
+
   async function setQuantity(menuItemId: number, quantity: number) {
     if (quantity < 0) return;
-    setBusy(true);
 
+    // Track the latest requested quantity to handle rapid successive taps
+    latestTargetQtyRef.current.set(menuItemId, quantity);
+
+    const previousCart = cart;
+
+    // Optimistically update React state immediately (0ms visual feedback)
+    setCart((currentCart) => {
+      const existingItems = currentCart?.items ?? [];
+      let updatedItems: CartItem[];
+
+      if (quantity <= 0) {
+        updatedItems = existingItems.filter((i) => i.menuItemId !== menuItemId);
+      } else {
+        const itemIndex = existingItems.findIndex((i) => i.menuItemId === menuItemId);
+        if (itemIndex >= 0) {
+          const existing = existingItems[itemIndex]!;
+          const updated: CartItem = {
+            ...existing,
+            quantity,
+            lineTotalPaise: quantity * existing.unitPricePaise
+          };
+          updatedItems = [
+            ...existingItems.slice(0, itemIndex),
+            updated,
+            ...existingItems.slice(itemIndex + 1)
+          ];
+        } else {
+          // Find item details from menu categories
+          let foundInfo: { name: string; categoryName: string; isVeg: boolean; pricePaise: number } | null = null;
+          for (const category of menu) {
+            const match = category.items.find((i) => i.id === menuItemId);
+            if (match) {
+              foundInfo = {
+                name: match.name,
+                categoryName: category.name,
+                isVeg: match.isVeg,
+                pricePaise: match.pricePaise
+              };
+              break;
+            }
+          }
+
+          if (foundInfo) {
+            const newItem: CartItem = {
+              menuItemId,
+              name: foundInfo.name,
+              categoryName: foundInfo.categoryName,
+              isVeg: foundInfo.isVeg,
+              quantity,
+              unitPricePaise: foundInfo.pricePaise,
+              lineTotalPaise: quantity * foundInfo.pricePaise
+            };
+            updatedItems = [...existingItems, newItem];
+          } else {
+            updatedItems = existingItems;
+          }
+        }
+      }
+
+      const totalPaise = updatedItems.reduce((sum, item) => sum + item.lineTotalPaise, 0);
+
+      return {
+        id: currentCart?.id ?? 0,
+        items: updatedItems,
+        totalPaise,
+        currency: "INR"
+      };
+    });
+
+    // Send API request in the background without freezing UI buttons
     try {
       const response = await apiPut<{ cart: Cart }>("/api/cart/items", {
         menuItemId,
         quantity
       });
-      setCart(response.cart);
+
+      // Only commit server response if no newer quantity was requested for this item
+      if (latestTargetQtyRef.current.get(menuItemId) === quantity) {
+        latestTargetQtyRef.current.delete(menuItemId);
+        setCart(response.cart);
+      }
     } catch (error) {
-      setNotice({
-        variant: "error",
-        title: "Cart update failed",
-        subtitle: error instanceof Error ? error.message : "Could not update item quantity."
-      });
-    } finally {
-      setBusy(false);
+      if (latestTargetQtyRef.current.get(menuItemId) === quantity) {
+        latestTargetQtyRef.current.delete(menuItemId);
+        setCart(previousCart);
+        setNotice({
+          variant: "error",
+          title: "Cart update failed",
+          subtitle: error instanceof Error ? error.message : "Could not update item quantity."
+        });
+      }
     }
   }
 
   async function placeOrder() {
     setBusy(true);
     setNotice(null);
+
+    // If a cart update was just clicked, let in-flight update settle before ordering
+    if (latestTargetQtyRef.current.size > 0) {
+      await new Promise((resolve) => setTimeout(resolve, 300));
+    }
 
     try {
       const response = await apiPost<{ order: Order }>(

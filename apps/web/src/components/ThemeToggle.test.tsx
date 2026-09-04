@@ -10,35 +10,35 @@ describe("ThemeToggle and ThemeProvider", () => {
     document.documentElement.removeAttribute("data-theme");
   });
 
-  it("defaults to dark theme and toggles to light theme on click", () => {
+  it("defaults to light theme and toggles to dark theme on click", () => {
     render(
       <ThemeProvider>
         <ThemeToggle />
       </ThemeProvider>
     );
 
-    const toggleBtn = screen.getByRole("button", { name: /switch to light theme/i });
+    const toggleBtn = screen.getByRole("button", { name: /switch to dark theme/i });
     expect(toggleBtn).toBeInTheDocument();
-    expect(document.documentElement.getAttribute("data-theme")).toBe("dark");
-    expect(document.documentElement.classList.contains("light")).toBe(false);
+    expect(document.documentElement.getAttribute("data-theme")).toBe("light");
+    expect(document.documentElement.classList.contains("light")).toBe(true);
 
     fireEvent.click(toggleBtn);
 
+    expect(screen.getByRole("button", { name: /switch to light theme/i })).toBeInTheDocument();
+    expect(document.documentElement.getAttribute("data-theme")).toBe("dark");
+    expect(document.documentElement.classList.contains("dark")).toBe(true);
+    expect(localStorage.getItem("d3-theme")).toBe("dark");
+
+    // Click again to switch back to light
+    fireEvent.click(screen.getByRole("button", { name: /switch to light theme/i }));
     expect(screen.getByRole("button", { name: /switch to dark theme/i })).toBeInTheDocument();
     expect(document.documentElement.getAttribute("data-theme")).toBe("light");
     expect(document.documentElement.classList.contains("light")).toBe(true);
     expect(localStorage.getItem("d3-theme")).toBe("light");
-
-    // Click again to switch back to dark
-    fireEvent.click(screen.getByRole("button", { name: /switch to dark theme/i }));
-    expect(screen.getByRole("button", { name: /switch to light theme/i })).toBeInTheDocument();
-    expect(document.documentElement.getAttribute("data-theme")).toBe("dark");
-    expect(document.documentElement.classList.contains("light")).toBe(false);
-    expect(localStorage.getItem("d3-theme")).toBe("dark");
   });
 
-  it("restores light theme from localStorage if previously stored", () => {
-    localStorage.setItem("d3-theme", "light");
+  it("restores dark theme from localStorage if previously stored", () => {
+    localStorage.setItem("d3-theme", "dark");
 
     render(
       <ThemeProvider>
@@ -46,8 +46,8 @@ describe("ThemeToggle and ThemeProvider", () => {
       </ThemeProvider>
     );
 
-    expect(screen.getByRole("button", { name: /switch to dark theme/i })).toBeInTheDocument();
-    expect(document.documentElement.getAttribute("data-theme")).toBe("light");
-    expect(document.documentElement.classList.contains("light")).toBe(true);
+    expect(screen.getByRole("button", { name: /switch to light theme/i })).toBeInTheDocument();
+    expect(document.documentElement.getAttribute("data-theme")).toBe("dark");
+    expect(document.documentElement.classList.contains("dark")).toBe(true);
   });
 });

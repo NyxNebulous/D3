@@ -14,7 +14,7 @@ const STORAGE_KEY = "d3-theme";
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
   const [theme, setThemeState] = useState<Theme>(() => {
-    if (typeof window === "undefined") return "dark";
+    if (typeof window === "undefined") return "light";
     try {
       const saved = localStorage.getItem(STORAGE_KEY);
       if (saved === "light" || saved === "dark") {
@@ -23,16 +23,18 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     } catch {
       // LocalStorage access denied or unavailable
     }
-    return "dark";
+    return "light";
   });
 
   useEffect(() => {
     const root = document.documentElement;
     if (theme === "light") {
       root.classList.add("light");
+      root.classList.remove("dark");
       root.setAttribute("data-theme", "light");
     } else {
       root.classList.remove("light");
+      root.classList.add("dark");
       root.setAttribute("data-theme", "dark");
     }
 
@@ -63,7 +65,7 @@ export function useTheme(): ThemeContextType {
   if (!context) {
     // Fallback if rendered outside ThemeProvider
     return {
-      theme: "dark",
+      theme: "light",
       toggleTheme: () => {},
       setTheme: () => {}
     };

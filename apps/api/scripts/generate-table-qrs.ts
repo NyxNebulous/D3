@@ -10,7 +10,7 @@ const qrSecret =
   process.env.HMAC_SECRET ??
   process.env.QR_SECRET ??
   "d3-production-qr-secret-replace-with-yours";
-const tableCount = Number(process.env.TABLE_COUNT ?? "10");
+const tableCount = Number(process.env.TABLE_COUNT ?? "16");
 
 console.log("\n=======================================================");
 console.log("   D3 RESTAURANT - PRODUCTION TABLE QR CODES GENERATOR   ");
