@@ -1,5 +1,6 @@
 import type { FormEvent } from "react";
 import { Notice, type NoticeVariant } from "../../../components/Notice.js";
+import { ThemeToggle } from "../../../components/ThemeToggle.js";
 
 type NoticeState = {
   variant: NoticeVariant;
@@ -27,7 +28,10 @@ export function AdminLogin({
   notice
 }: AdminLoginProps) {
   return (
-    <div className="min-h-dvh flex items-center justify-center p-6 bg-[#08090b]">
+    <div className="min-h-dvh flex items-center justify-center p-6 bg-canvas relative">
+      <div className="absolute top-5 right-5">
+        <ThemeToggle size={16} />
+      </div>
       <div className="bg-surface-2 border border-hairline rounded-3xl p-8 px-7 w-full max-w-[400px] shadow-[0_20px_50px_rgba(0,0,0,0.5)]">
         <div className="w-14 h-14 rounded-lg bg-ember flex items-center justify-center text-[22px] font-extrabold text-[#1a0d06] tracking-tight mx-auto mb-5 shrink-0">
           D3

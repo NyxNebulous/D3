@@ -229,7 +229,7 @@ export function CustomerOrderPage({ qrId, signature }: CustomerOrderPageProps) {
   const showNav = NAV_SCREENS.includes(screen);
 
   return (
-    <div className="h-dvh min-h-dvh w-full bg-[#08090b] flex justify-center overflow-hidden">
+    <div className="h-dvh min-h-dvh w-full bg-canvas flex justify-center overflow-hidden">
       <div className="w-full max-w-[480px] h-dvh max-h-dvh flex flex-col bg-ink relative overflow-hidden">
         {HEADER_SCREENS.includes(screen) ? (
           <CustomerHeader customerTableText={customerTableText} />

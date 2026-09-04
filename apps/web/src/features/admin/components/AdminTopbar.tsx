@@ -1,3 +1,5 @@
+import { ThemeToggle } from "../../../components/ThemeToggle.js";
+
 type Staff = {
   id: number;
   username: string;
@@ -49,18 +51,19 @@ export function AdminTopbar({
         </button>
       </nav>
 
-      {/* <div className="flex items-center gap-3 max-sm:text-right">
-        <span className="text-xs text-clay hidden sm:inline">
-          Signed in as <strong className="text-parchment font-semibold">{staff.username}</strong>
+      <div className="flex items-center gap-2.5">
+        <ThemeToggle size={15} className="p-1.5 rounded-lg" />
+        <span className="text-xs text-clay hidden md:inline">
+          <strong className="text-parchment font-semibold">{staff.username}</strong>
         </span>
         <button
-          className="text-xs text-clay hover:text-rust cursor-pointer transition"
+          className="text-xs text-clay hover:text-rust font-semibold cursor-pointer transition px-2 py-1 rounded-md hover:bg-surface-2"
           onClick={onLogout}
           type="button"
         >
           Sign out
         </button>
-      </div> */}
+      </div>
     </header>
   );
 }

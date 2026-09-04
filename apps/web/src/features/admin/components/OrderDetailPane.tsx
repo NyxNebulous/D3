@@ -116,13 +116,13 @@ export function OrderDetailPane({
 
       <div className="flex gap-2.5 flex-wrap">
         {isPrepared ? (
-          <div className="bg-sage text-[#0e1712] rounded-lg py-2.5 px-4.5 text-[13.5px] font-bold inline-flex items-center gap-1.5 cursor-default opacity-80 select-none">
+          <div className="bg-sage text-sage-ink rounded-lg py-2.5 px-4.5 text-[13.5px] font-bold inline-flex items-center gap-1.5 cursor-default opacity-80 select-none">
             <Check aria-hidden="true" size={16} />
             Food Prepared
           </div>
         ) : (
           <button
-            className="bg-sage hover:bg-[#7db896] text-[#0e1712] rounded-lg py-2.5 px-4.5 text-[13.5px] font-bold inline-flex items-center gap-1.5 transition cursor-pointer disabled:opacity-55"
+            className="bg-sage hover:opacity-90 text-sage-ink rounded-lg py-2.5 px-4.5 text-[13.5px] font-bold inline-flex items-center gap-1.5 transition cursor-pointer disabled:opacity-55"
             disabled={busy}
             onClick={() => onMarkPrepared(order.id)}
             type="button"

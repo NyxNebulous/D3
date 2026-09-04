@@ -235,7 +235,7 @@ export function createOrdersRouter(database: Database): Router {
           `
             SELECT id
             FROM orders
-            ORDER BY created_at DESC, id DESC
+            ORDER BY created_at ASC, id ASC
             LIMIT 200
           `
         )

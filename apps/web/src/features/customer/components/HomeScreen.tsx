@@ -1,6 +1,7 @@
 import { Bell, FireExtinguisher, FireExtinguisherIcon, Flame, FlameIcon, FlameKindling, Grid2x2, Heart, ReceiptText, ShoppingCart } from "lucide-react";
 import { formatInrFromPaise } from "@d3/shared";
 import type { MenuCategory, Order, SessionContext } from "../../../api/client.js";
+import { ThemeToggle } from "../../../components/ThemeToggle.js";
 
 type HomeScreenProps = {
   session: SessionContext | null;
@@ -38,8 +39,11 @@ export function HomeScreen({
             {customerTableText}
           </div>
         </div>
-        <div className="bg-surface-2 border border-hairline text-parchment text-sm font-semibold py-1 px-4 rounded-full shrink-0">
-          D3
+        <div className="flex items-center gap-2 shrink-0">
+          <div className="bg-surface-2 border border-hairline text-parchment text-sm font-semibold py-1 px-3 rounded-full">
+            D3
+          </div>
+          <ThemeToggle size={14} className="p-1.5 rounded-full" />
         </div>
       </div>
 

@@ -25,7 +25,7 @@ export function PaymentBadge({ state }: { state: string }) {
   return (
     <span
       className={`inline-flex items-center text-[10.5px] font-bold py-1 px-2.5 rounded-full uppercase tracking-wider ${
-        isPaid ? "bg-sage-bg text-[#9ac7af]" : "bg-rust-bg text-[#e88680]"
+        isPaid ? "bg-sage-bg text-sage" : "bg-rust-bg text-rust"
       }`}
     >
       {formatPaymentState(state)}
@@ -38,7 +38,7 @@ export function FulfillmentBadge({ state }: { state: string }) {
   return (
     <span
       className={`inline-flex items-center text-[10.5px] font-bold py-1 px-2.5 rounded-full uppercase tracking-wider ${
-        isCompleted ? "bg-sage-bg text-[#9ac7af]" : "bg-ember-muted text-ember-hover"
+        isCompleted ? "bg-sage-bg text-sage" : "bg-ember-muted text-ember"
       }`}
     >
       {formatFulfillmentState(state)}

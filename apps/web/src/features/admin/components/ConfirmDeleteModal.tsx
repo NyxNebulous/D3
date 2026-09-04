@@ -14,7 +14,7 @@ export function ConfirmDeleteModal({
   busy
 }: ConfirmDeleteModalProps) {
   return (
-    <div className="fixed inset-0 bg-[#08090b]/80 backdrop-blur-xs flex items-center justify-center p-4 z-50">
+    <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
       <div className="bg-surface-2 border border-hairline rounded-2xl p-6 w-full max-w-sm shadow-2xl flex flex-col gap-3.5">
         <h2 className="text-[17px] font-bold text-parchment m-0">
           Delete {type === "category" ? "Category" : "Menu Item"}?

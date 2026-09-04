@@ -1,6 +1,7 @@
 import type { FormEvent } from "react";
 import { ArrowRight } from "lucide-react";
 import { Notice, type NoticeVariant } from "../../../components/Notice.js";
+import { ThemeToggle } from "../../../components/ThemeToggle.js";
 
 type NoticeState = {
   variant: NoticeVariant;
@@ -30,7 +31,10 @@ export function AuthScreen({
   notice
 }: AuthScreenProps) {
   return (
-    <section className="flex flex-col flex-1 min-h-0 overflow-y-auto p-6 px-5 items-stretch justify-center">
+    <section className="flex flex-col flex-1 min-h-0 overflow-y-auto p-6 px-5 items-stretch justify-center relative">
+      <div className="absolute top-5 right-5">
+        <ThemeToggle size={16} />
+      </div>
       <div className="bg-surface-2 border border-hairline rounded-3xl p-7 px-6 shadow-[0_20px_50px_rgba(0,0,0,0.4)] flex flex-col">
         <h1 className="text-[19px] font-bold text-parchment mb-0.5">Start your order</h1>
         <div className="text-[12.5px] text-clay mb-5">{customerTableText} · D3</div>

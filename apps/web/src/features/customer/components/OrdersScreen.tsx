@@ -57,14 +57,14 @@ export function OrdersScreen({ customerTableText, orders, notice }: OrdersScreen
                 <div className="flex gap-1.5 mb-2.5">
                   <span
                     className={`inline-flex items-center text-[10.5px] font-bold py-1 px-2.5 rounded-full uppercase tracking-wider ${
-                      isPaid ? "bg-sage-bg text-[#9ac7af]" : "bg-rust-bg text-[#e88680]"
+                      isPaid ? "bg-sage-bg text-sage" : "bg-rust-bg text-rust"
                     }`}
                   >
                     {isPaid ? "Paid" : "Unpaid"}
                   </span>
                   <span
                     className={`inline-flex items-center text-[10.5px] font-bold py-1 px-2.5 rounded-full uppercase tracking-wider ${
-                      isReady ? "bg-sage-bg text-[#9ac7af]" : "bg-ember-muted text-ember-hover"
+                      isReady ? "bg-sage-bg text-sage" : "bg-ember-muted text-ember"
                     }`}
                   >
                     {isReady ? "Ready" : "Preparing"}

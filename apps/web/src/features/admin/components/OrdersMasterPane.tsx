@@ -12,7 +12,7 @@ type OrdersMasterPaneProps = {
   onRefresh: () => void;
 };
 
-type OrderFilterSection = "to-cook" | "unpaid" | "settled";
+type OrderFilterSection = "to-cook" | "unsettled" | "settled";
 
 export function OrdersMasterPane({
   orders,
@@ -23,27 +23,39 @@ export function OrdersMasterPane({
 }: OrdersMasterPaneProps) {
   const [activeSection, setActiveSection] = useState<OrderFilterSection>("to-cook");
 
-  // Stage 1: Kitchen Queue (Needs cooking)
+  // Helper to ensure strict FIFO (earliest orders first, new orders at bottom)
+  const sortChronologicalAsc = (a: Order, b: Order) => {
+    const timeA = new Date(a.createdAt).getTime();
+    const timeB = new Date(b.createdAt).getTime();
+    if (timeA !== timeB) return timeA - timeB;
+    return a.id - b.id;
+  };
+
+  // Stage 1: Kitchen Queue (Needs cooking, irrespective of paid or unpaid)
   const toCookOrders = useMemo(
-    () => orders.filter((o) => o.fulfillmentState === "PENDING"),
+    () => orders.filter((o) => o.fulfillmentState === "PENDING").sort(sortChronologicalAsc),
     [orders]
   );
 
-  // Stage 2: Cooked & Served, Awaiting Payment
-  const unpaidOrders = useMemo(
+  // Stage 2: Cooked & Served, Awaiting Payment (Unsettled)
+  const unsettledOrders = useMemo(
     () =>
-      orders.filter(
-        (o) => o.fulfillmentState === "COMPLETED" && o.paymentState === "UNPAID"
-      ),
+      orders
+        .filter(
+          (o) => o.fulfillmentState === "COMPLETED" && o.paymentState === "UNPAID"
+        )
+        .sort(sortChronologicalAsc),
     [orders]
   );
 
-  // Stage 3: Fully Settled & Completed
+  // Stage 3: Fully Settled & Completed (Both cooked and paid)
   const settledOrders = useMemo(
     () =>
-      orders.filter(
-        (o) => o.fulfillmentState === "COMPLETED" && o.paymentState === "PAID_OFFLINE"
-      ),
+      orders
+        .filter(
+          (o) => o.fulfillmentState === "COMPLETED" && o.paymentState === "PAID_OFFLINE"
+        )
+        .sort(sortChronologicalAsc),
     [orders]
   );
 
@@ -51,13 +63,13 @@ export function OrdersMasterPane({
     switch (activeSection) {
       case "to-cook":
         return toCookOrders;
-      case "unpaid":
-        return unpaidOrders;
+      case "unsettled":
+        return unsettledOrders;
       case "settled":
       default:
         return settledOrders;
     }
-  }, [activeSection, toCookOrders, unpaidOrders, settledOrders]);
+  }, [activeSection, toCookOrders, unsettledOrders, settledOrders]);
 
   function renderOrderCard(order: Order) {
     const isSelected = order.id === selectedOrderId;
@@ -157,26 +169,26 @@ export function OrdersMasterPane({
           </span>
         </button>
 
-        {/* 2. Unpaid (Prepared & awaiting bill payment) */}
+        {/* 2. Unsettled (Prepared & awaiting bill payment) */}
         <button
           className={`py-1.5 px-2 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition cursor-pointer border ${
-            activeSection === "unpaid"
+            activeSection === "unsettled"
               ? "bg-rust-bg border-rust text-rust shadow-xs"
               : "border-transparent text-clay hover:text-parchment hover:bg-surface-2"
           }`}
-          onClick={() => setActiveSection("unpaid")}
+          onClick={() => setActiveSection("unsettled")}
           type="button"
         >
           <Wallet size={13} className="text-rust shrink-0" aria-hidden="true" />
-          <span>Unpaid</span>
+          <span>Unsettled</span>
           <span
             className={`text-[10.5px] px-1.5 py-0.2 rounded-full font-bold ${
-              activeSection === "unpaid"
+              activeSection === "unsettled"
                 ? "bg-rust text-white"
                 : "bg-surface-2 text-clay"
             }`}
           >
-            {unpaidOrders.length}
+            {unsettledOrders.length}
           </span>
         </button>
 
@@ -213,7 +225,7 @@ export function OrdersMasterPane({
             <div className="w-12 h-12 rounded-2xl bg-surface-1 border border-hairline flex items-center justify-center text-clay-dim">
               {activeSection === "to-cook" ? (
                 <Flame size={22} className="text-ember/70" />
-              ) : activeSection === "unpaid" ? (
+              ) : activeSection === "unsettled" ? (
                 <Wallet size={22} className="text-rust/70" />
               ) : (
                 <CheckCircle2 size={22} className="text-sage/70" />
@@ -222,15 +234,15 @@ export function OrdersMasterPane({
             <div className="text-xs font-bold text-parchment">
               {activeSection === "to-cook"
                 ? "Kitchen is clear!"
-                : activeSection === "unpaid"
-                ? "No unpaid orders"
+                : activeSection === "unsettled"
+                ? "No unsettled orders"
                 : "No settled orders yet"}
             </div>
             <div className="text-[11px] text-clay-dim max-w-[200px]">
               {activeSection === "to-cook"
                 ? "No dishes currently need preparation."
-                : activeSection === "unpaid"
-                ? "All prepared dishes have been paid for."
+                : activeSection === "unsettled"
+                ? "All prepared dishes have been settled."
                 : "Completed and paid orders will appear here."}
             </div>
           </div>

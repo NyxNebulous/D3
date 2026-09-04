@@ -374,7 +374,7 @@ export function AdminPage() {
   }
 
   return (
-    <div className="min-h-dvh h-dvh bg-[#08090b] flex flex-col overflow-hidden">
+    <div className="min-h-dvh h-dvh bg-canvas flex flex-col overflow-hidden">
       <AdminTopbar
         staff={staff}
         activeTab={activeTab}

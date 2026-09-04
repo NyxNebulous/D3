@@ -1,4 +1,5 @@
 import { UtensilsCrossed, Wine } from "lucide-react";
+import { ThemeToggle } from "../../../components/ThemeToggle.js";
 
 type CustomerHeaderProps = {
   customerTableText: string;
@@ -18,9 +19,12 @@ export function CustomerHeader({ customerTableText }: CustomerHeaderProps) {
         </div>
       </div>
 
-      <div className="flex items-center gap-1.5 bg-surface-2 border border-hairline py-1.5 px-3 rounded-full text-xs font-semibold text-parchment shadow-xs">
-        <Wine size={13} className="text-ember" aria-hidden="true" />
-        <span>{customerTableText}</span>
+      <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1.5 bg-surface-2 border border-hairline py-1.5 px-3 rounded-full text-xs font-semibold text-parchment shadow-xs">
+          <Wine size={13} className="text-ember" aria-hidden="true" />
+          <span>{customerTableText}</span>
+        </div>
+        <ThemeToggle size={14} className="p-1.5 rounded-full" />
       </div>
     </header>
   );

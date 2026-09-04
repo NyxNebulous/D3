@@ -1,23 +1,26 @@
 @import "tailwindcss";
 
 @theme {
-  --color-ink: #0c0d10;
-  --color-surface-1: #16181c;
-  --color-surface-2: #1e2126;
-  --color-surface-3: #272a30;
-  --color-hairline: rgba(245, 241, 234, 0.08);
-  --color-hairline-strong: rgba(245, 241, 234, 0.16);
-  --color-parchment: #f5f1ea;
-  --color-clay: #948e80;
-  --color-clay-dim: #6b665c;
-  --color-ember: #ff6b35;
-  --color-ember-hover: #ff7f4f;
-  --color-ember-deep: #d9501e;
-  --color-ember-muted: #3a2419;
-  --color-sage: #6fa287;
-  --color-sage-bg: #16241c;
-  --color-rust: #c1443c;
-  --color-rust-bg: #2a1614;
+  --color-canvas: var(--canvas);
+  --color-ink: var(--ink);
+  --color-surface-1: var(--surface-1);
+  --color-surface-2: var(--surface-2);
+  --color-surface-3: var(--surface-3);
+  --color-hairline: var(--hairline);
+  --color-hairline-strong: var(--hairline-strong);
+  --color-parchment: var(--parchment);
+  --color-clay: var(--clay);
+  --color-clay-dim: var(--clay-dim);
+  --color-ember: var(--ember);
+  --color-ember-hover: var(--ember-hover);
+  --color-ember-deep: var(--ember-deep);
+  --color-ember-muted: var(--ember-muted);
+  --color-sage: var(--sage);
+  --color-sage-bg: var(--sage-bg);
+  --color-sage-ink: var(--sage-ink);
+  --color-rust: var(--rust);
+  --color-rust-bg: var(--rust-bg);
+  --color-ember-ink: var(--ember-ink);
 
   --radius-sm: 8px;
   --radius-md: 14px;
@@ -26,6 +29,7 @@
 }
 
 :root {
+  --canvas: #08090b;
   --ink: #0c0d10;
   --surface-1: #16181c;
   --surface-2: #1e2126;
@@ -39,10 +43,36 @@
   --ember-hover: #ff7f4f;
   --ember-deep: #d9501e;
   --ember-muted: #3a2419;
+  --ember-ink: #1a0d06;
   --sage: #6fa287;
   --sage-bg: #16241c;
+  --sage-ink: #0e1712;
   --rust: #c1443c;
   --rust-bg: #2a1614;
+}
+
+:root[data-theme="light"],
+html.light {
+  --canvas: #f0f2f5;
+  --ink: #ffffff;
+  --surface-1: #f7f8fa;
+  --surface-2: #edf0f4;
+  --surface-3: #e2e6eb;
+  --hairline: rgba(0, 0, 0, 0.09);
+  --hairline-strong: rgba(0, 0, 0, 0.16);
+  --parchment: #111318;
+  --clay: #575e6d;
+  --clay-dim: #8b92a0;
+  --ember: #e24b17;
+  --ember-hover: #cb3d0c;
+  --ember-deep: #a82e05;
+  --ember-muted: #fcedea;
+  --ember-ink: #ffffff;
+  --sage: #1e7e4d;
+  --sage-bg: #eaf6ee;
+  --sage-ink: #ffffff;
+  --rust: #cb2929;
+  --rust-bg: #fdeeee;
 }
 
 html {
@@ -52,8 +82,8 @@ html {
 body {
   margin: 0;
   min-height: 100%;
-  background: #08090b;
-  color: #f5f1ea;
+  background: var(--canvas);
+  color: var(--parchment);
   font-family: -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   font-synthesis: none;
   text-rendering: optimizeLegibility;

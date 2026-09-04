@@ -140,6 +140,50 @@ describe("D3 API V1", () => {
     expect(paid.body.order.fulfillmentState).toBe("COMPLETED");
   });
 
+  it("returns admin orders in FIFO sequence (earliest orders first, new orders at bottom)", async () => {
+    const server = createTestServer();
+    const customerAgent = request.agent(server.app);
+    const adminAgent = request.agent(server.app);
+
+    await authenticateCustomer(server, customerAgent);
+    await customerAgent
+      .put("/api/cart/items")
+      .send({ menuItemId: server.menuItemId, quantity: 1 })
+      .expect(200);
+
+    const order1 = await customerAgent
+      .post("/api/orders")
+      .set("Idempotency-Key", "order-fifo-1")
+      .send({})
+      .expect(201);
+
+    await customerAgent
+      .put("/api/cart/items")
+      .send({ menuItemId: server.menuItemId, quantity: 2 })
+      .expect(200);
+
+    const order2 = await customerAgent
+      .post("/api/orders")
+      .set("Idempotency-Key", "order-fifo-2")
+      .send({})
+      .expect(201);
+
+    await adminAgent
+      .post("/api/admin/login")
+      .send({ username: "manager", password: "manager-password" })
+      .expect(200);
+
+    const adminOrders = await adminAgent.get("/api/admin/orders").expect(200);
+    const orderIds = adminOrders.body.orders.map((o: { id: number }) => o.id);
+
+    const idx1 = orderIds.indexOf(order1.body.order.id);
+    const idx2 = orderIds.indexOf(order2.body.order.id);
+
+    expect(idx1).toBeGreaterThanOrEqual(0);
+    expect(idx2).toBeGreaterThanOrEqual(0);
+    expect(idx1).toBeLessThan(idx2); // Earlier order appears BEFORE newer order
+  });
+
   it("supports veg and non-veg menu metadata", async () => {
     const server = createTestServer();
     const adminAgent = request.agent(server.app);

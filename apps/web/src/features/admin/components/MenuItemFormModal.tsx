@@ -61,7 +61,7 @@ export function MenuItemFormModal({
   }
 
   return (
-    <div className="fixed inset-0 bg-[#08090b]/80 backdrop-blur-xs flex items-center justify-center p-4 z-50">
+    <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
       <div className="bg-surface-2 border border-hairline rounded-2xl p-6 w-full max-w-md shadow-2xl flex flex-col gap-4">
         <h2 className="text-[17px] font-bold text-parchment m-0">
           {item ? "Edit Menu Item" : "New Menu Item"}
