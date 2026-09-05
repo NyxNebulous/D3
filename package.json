@@ -17,7 +17,7 @@
     "typecheck": "npm run typecheck --workspaces --if-present"
   },
   "engines": {
-    "node": ">=26.0.0"
+    "node": ">=20.0.0"
   },
   "dependencies": {
     "cookie-parser": "^1.4.7"
