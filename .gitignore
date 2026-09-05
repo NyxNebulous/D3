@@ -7,4 +7,4 @@ coverage/
 data/
 *.log
 *.tsbuildinfo
-
+docs/
