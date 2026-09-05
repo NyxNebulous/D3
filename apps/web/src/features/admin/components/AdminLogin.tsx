@@ -1,4 +1,5 @@
-import type { FormEvent } from "react";
+import { useState, type FormEvent } from "react";
+import { Eye, EyeOff } from "lucide-react";
 import { Notice, type NoticeVariant } from "../../../components/Notice.js";
 import { ThemeToggle } from "../../../components/ThemeToggle.js";
 
@@ -27,6 +28,8 @@ export function AdminLogin({
   busy,
   notice
 }: AdminLoginProps) {
+  const [showPassword, setShowPassword] = useState(false);
+
   return (
     <div className="min-h-dvh flex items-center justify-center p-6 bg-canvas relative">
       <div className="absolute top-5 right-5">
@@ -70,16 +73,31 @@ export function AdminLogin({
             >
               Password
             </label>
-            <input
-              id="staff-password"
-              autoComplete="current-password"
-              type="password"
-              value={password}
-              onChange={(e) => onPasswordChange(e.target.value)}
-              placeholder="••••••••"
-              required
-              className="w-full bg-surface-1 border border-hairline rounded-lg p-3.5 px-3.5 text-parchment text-[15px] focus:outline-none focus:border-ember transition placeholder:text-clay-dim"
-            />
+            <div className="relative flex items-center">
+              <input
+                id="staff-password"
+                autoComplete="current-password"
+                type={showPassword ? "text" : "password"}
+                value={password}
+                onChange={(e) => onPasswordChange(e.target.value)}
+                placeholder="••••••••"
+                required
+                className="w-full bg-surface-1 border border-hairline rounded-lg p-3.5 pl-3.5 pr-11 text-parchment text-[15px] focus:outline-none focus:border-ember transition placeholder:text-clay-dim"
+              />
+              <button
+                type="button"
+                className="absolute right-3 p-1 text-clay hover:text-parchment transition cursor-pointer flex items-center justify-center rounded-md hover:bg-surface-2"
+                onClick={() => setShowPassword((prev) => !prev)}
+                title={showPassword ? "Hide password" : "Show password"}
+                aria-label={showPassword ? "Hide" : "Show"}
+              >
+                {showPassword ? (
+                  <EyeOff size={18} aria-hidden="true" />
+                ) : (
+                  <Eye size={18} aria-hidden="true" />
+                )}
+              </button>
+            </div>
           </div>
 
           <button

@@ -40,9 +40,6 @@ export function HomeScreen({
           </div>
         </div>
         <div className="flex items-center gap-2 shrink-0">
-          <div className="bg-surface-2 border border-hairline text-parchment text-sm font-semibold py-1 px-3 rounded-full">
-            D3
-          </div>
           <ThemeToggle size={14} className="p-1.5 rounded-full" />
         </div>
       </div>

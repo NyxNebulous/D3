@@ -69,7 +69,7 @@ export const createOrderSchema = z.object({}).strict();
 export const adminLoginSchema = z
   .object({
     username: z.string().trim().min(1).max(80),
-    password: z.string().min(8).max(256)
+    password: z.string().min(1).max(256)
   })
   .strict();
 

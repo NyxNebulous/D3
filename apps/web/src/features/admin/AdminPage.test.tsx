@@ -117,4 +117,23 @@ describe("AdminPage", () => {
       expect(screen.getByText("Butter Naan")).toBeInTheDocument();
     });
   });
+
+  it("toggles password visibility between masked and plain text", async () => {
+    const fetchMock = vi.fn(async () => {
+      return new Response(JSON.stringify({ error: "Unauthenticated" }), { status: 401 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<AdminPage />);
+
+    const passwordInput = await screen.findByLabelText(/password/i);
+    expect(passwordInput).toHaveAttribute("type", "password");
+
+    const toggleBtn = screen.getByTitle(/show password/i);
+    fireEvent.click(toggleBtn);
+    expect(passwordInput).toHaveAttribute("type", "text");
+
+    fireEvent.click(toggleBtn);
+    expect(passwordInput).toHaveAttribute("type", "password");
+  });
 });

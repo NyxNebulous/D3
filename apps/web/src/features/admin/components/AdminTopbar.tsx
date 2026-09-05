@@ -28,7 +28,11 @@ export function AdminTopbar({
           D3
         </button>
         <div>
-          <div className="text-[15px] font-bold text-parchment leading-tight">D3 Admin</div>
+          <button
+            className="text-[15px] font-bold text-parchment leading-tight"
+            onClick={onLogout}
+            type="button"
+          >Admin</button>
         </div>
       </div>
 
@@ -56,13 +60,13 @@ export function AdminTopbar({
         <span className="text-xs text-clay hidden md:inline">
           <strong className="text-parchment font-semibold">{staff.username}</strong>
         </span>
-        <button
+        {/* <button
           className="text-xs text-clay hover:text-rust font-semibold cursor-pointer transition px-2 py-1 rounded-md hover:bg-surface-2"
           onClick={onLogout}
           type="button"
         >
           Sign out
-        </button>
+        </button> */}
       </div>
     </header>
   );
