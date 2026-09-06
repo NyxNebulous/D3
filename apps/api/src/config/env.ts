@@ -22,7 +22,9 @@ const envSchema = z.object({
   D3_PRE_SESSION_TTL_MS: z.coerce.number().int().positive().default(30 * 60 * 1000),
   D3_CUSTOMER_SESSION_TTL_MS: z.coerce.number().int().positive().default(8 * 60 * 60 * 1000),
   D3_STAFF_SESSION_TTL_MS: z.coerce.number().int().positive().default(8 * 60 * 60 * 1000),
-  D3_ENABLE_DEV_SEED: booleanFromEnv.default(false)
+  D3_ENABLE_DEV_SEED: booleanFromEnv.default(false),
+  TELEGRAM_BOT_TOKEN: z.string().optional(),
+  TELEGRAM_CHAT_ID: z.string().optional()
 });
 
 export type AppConfig = {
@@ -40,6 +42,8 @@ export type AppConfig = {
   customerSessionTtlMs: number;
   staffSessionTtlMs: number;
   enableDevSeed: boolean;
+  telegramBotToken?: string;
+  telegramChatId?: string;
 };
 
 export function loadConfig(source: NodeJS.ProcessEnv = process.env): AppConfig {
@@ -59,7 +63,9 @@ export function loadConfig(source: NodeJS.ProcessEnv = process.env): AppConfig {
     preSessionTtlMs: parsed.D3_PRE_SESSION_TTL_MS,
     customerSessionTtlMs: parsed.D3_CUSTOMER_SESSION_TTL_MS,
     staffSessionTtlMs: parsed.D3_STAFF_SESSION_TTL_MS,
-    enableDevSeed: parsed.D3_ENABLE_DEV_SEED
+    enableDevSeed: parsed.D3_ENABLE_DEV_SEED,
+    telegramBotToken: parsed.TELEGRAM_BOT_TOKEN,
+    telegramChatId: parsed.TELEGRAM_CHAT_ID
   };
 }
 

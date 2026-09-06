@@ -1,4 +1,4 @@
-import { ArrowRight } from "lucide-react";
+import { ArrowRight, Bug } from "lucide-react";
 import { ThemeToggle } from "../../../components/ThemeToggle.js";
 import { Notice, type NoticeVariant } from "../../../components/Notice.js";
 
@@ -6,12 +6,24 @@ type LandingScreenProps = {
   customerTableText: string;
   onProceed: () => void;
   notice?: { variant: NoticeVariant; title: string; subtitle: string } | null;
+  onReportBug?: () => void;
 };
 
-export function LandingScreen({ customerTableText, onProceed, notice }: LandingScreenProps) {
+export function LandingScreen({ customerTableText, onProceed, notice, onReportBug }: LandingScreenProps) {
   return (
     <section className="flex flex-col flex-1 min-h-dvh justify-center items-center overflow-y-auto bg-[radial-gradient(circle_at_30%_20%,rgba(255,107,53,0.18),transparent_55%),radial-gradient(circle_at_75%_75%,rgba(255,107,53,0.1),transparent_50%),theme(colors.ink)] p-5 relative">
-      <div className="absolute top-5 right-5">
+      <div className="absolute top-5 right-5 flex items-center gap-2">
+        {onReportBug ? (
+          <button
+            onClick={onReportBug}
+            type="button"
+            className="p-2 rounded-xl border border-hairline bg-surface-2 hover:bg-surface-3 text-clay hover:text-ember transition cursor-pointer flex items-center justify-center shadow-xs"
+            title="Report a bug"
+            aria-label="Report a bug"
+          >
+            <Bug size={16} />
+          </button>
+        ) : null}
         <ThemeToggle size={16} />
       </div>
       <div className="bg-surface-2 border border-hairline rounded-3xl shadow-[0_20px_50px_rgba(0,0,0,0.5)] py-10 px-8 text-center w-[300px] max-w-[calc(100%-40px)] flex flex-col items-center">

@@ -685,3 +685,4 @@ export async function markOrderCompleted(
 
   return getOrderById(db, orderId);
 }
+

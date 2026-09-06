@@ -19,6 +19,7 @@ import { HomeScreen } from "./components/HomeScreen.js";
 import { LandingScreen } from "./components/LandingScreen.js";
 import { MenuScreen } from "./components/MenuScreen.js";
 import { OrdersScreen } from "./components/OrdersScreen.js";
+import { BugReportModal } from "./components/BugReportModal.js";
 
 type CustomerOrderPageProps = {
   qrId: string;
@@ -59,6 +60,7 @@ export function CustomerOrderPage({ qrId, signature }: CustomerOrderPageProps) {
   const [busy, setBusy] = useState(false);
   const [isBooting, setIsBooting] = useState(true);
   const [notice, setNotice] = useState<NoticeState | null>(null);
+  const [isBugModalOpen, setIsBugModalOpen] = useState(false);
 
   const cartQuantities = useMemo(() => {
     const map = new Map<number, number>();
@@ -409,7 +411,10 @@ export function CustomerOrderPage({ qrId, signature }: CustomerOrderPageProps) {
         ) : null}
 
         {!isBooting && HEADER_SCREENS.includes(screen) ? (
-          <CustomerHeader customerTableText={customerTableText} />
+          <CustomerHeader
+            customerTableText={customerTableText}
+            onReportBug={() => setIsBugModalOpen(true)}
+          />
         ) : null}
 
         {!isBooting && screen === "landing" ? (
@@ -417,6 +422,7 @@ export function CustomerOrderPage({ qrId, signature }: CustomerOrderPageProps) {
             customerTableText={customerTableText}
             onProceed={() => setScreen(session ? "home" : "auth")}
             notice={notice}
+            onReportBug={() => setIsBugModalOpen(true)}
           />
         ) : null}
 
@@ -430,6 +436,7 @@ export function CustomerOrderPage({ qrId, signature }: CustomerOrderPageProps) {
             onSubmit={loginCustomer}
             busy={busy}
             notice={notice}
+            onReportBug={() => setIsBugModalOpen(true)}
           />
         ) : null}
 
@@ -443,6 +450,7 @@ export function CustomerOrderPage({ qrId, signature }: CustomerOrderPageProps) {
             cartTotal={cartTotal}
             orders={orders}
             onNavigate={(nextScreen) => setScreen(nextScreen)}
+            onReportBug={() => setIsBugModalOpen(true)}
           />
         ) : null}
 
@@ -487,6 +495,15 @@ export function CustomerOrderPage({ qrId, signature }: CustomerOrderPageProps) {
             onSelectScreen={(nextScreen) => setScreen(nextScreen)}
           />
         ) : null}
+
+        <BugReportModal
+          isOpen={isBugModalOpen}
+          onClose={() => setIsBugModalOpen(false)}
+          tableLabel={tableLabel}
+          screenName={screen}
+          customerName={session?.customer.name || name}
+          customerMobile={session?.customer.mobileNumber || mobileNumber}
+        />
       </div>
     </div>
   );

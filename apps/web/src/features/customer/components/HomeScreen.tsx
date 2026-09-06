@@ -1,4 +1,4 @@
-import { Bell, FireExtinguisher, FireExtinguisherIcon, Flame, FlameIcon, FlameKindling, Grid2x2, Heart, ReceiptText, ShoppingCart } from "lucide-react";
+import { Bell, Bug, FireExtinguisher, FireExtinguisherIcon, Flame, FlameIcon, FlameKindling, Grid2x2, Heart, ReceiptText, ShoppingCart } from "lucide-react";
 import { formatInrFromPaise } from "@d3/shared";
 import type { MenuCategory, Order, SessionContext } from "../../../api/client.js";
 import { ThemeToggle } from "../../../components/ThemeToggle.js";
@@ -12,6 +12,7 @@ type HomeScreenProps = {
   cartTotal: number;
   orders: Order[];
   onNavigate: (screen: "menu" | "cart" | "orders") => void;
+  onReportBug?: () => void;
 };
 
 export function HomeScreen({
@@ -22,7 +23,8 @@ export function HomeScreen({
   cartCount,
   cartTotal,
   orders,
-  onNavigate
+  onNavigate,
+  onReportBug
 }: HomeScreenProps) {
   const totalMenuItems = menu.reduce((n, c) => n + c.items.length, 0);
 
@@ -40,6 +42,17 @@ export function HomeScreen({
           </div>
         </div>
         <div className="flex items-center gap-2 shrink-0">
+          {onReportBug ? (
+            <button
+              onClick={onReportBug}
+              type="button"
+              className="p-1.5 rounded-full border border-hairline bg-surface-2 hover:bg-surface-3 text-clay hover:text-ember transition cursor-pointer flex items-center justify-center shadow-xs"
+              title="Report a bug"
+              aria-label="Report a bug"
+            >
+              <Bug size={14} />
+            </button>
+          ) : null}
           <ThemeToggle size={14} className="p-1.5 rounded-full" />
         </div>
       </div>

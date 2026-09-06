@@ -449,4 +449,64 @@ describe("CustomerOrderPage", () => {
       expect(screen.getByText(/Paneer Butter Masala/i)).toBeInTheDocument();
     });
   });
+
+  it("opens bug report modal and submits a report to /api/bug-reports", async () => {
+    let capturedBody: any = null;
+
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      const method = init?.method ?? "GET";
+
+      if (url.includes("/api/qr/validate")) {
+        return new Response(
+          JSON.stringify({
+            table: { label: "Table 5" },
+            sameTableSession: false
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } }
+        );
+      }
+
+      if (url.includes("/api/bug-reports") && method === "POST") {
+        capturedBody = JSON.parse(String(init?.body));
+        return new Response(JSON.stringify({ success: true, id: 1 }), {
+          status: 201,
+          headers: { "Content-Type": "application/json" }
+        });
+      }
+
+      return new Response("Not found", { status: 404 });
+    });
+
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<CustomerOrderPage qrId="table-5" signature="sig789" />);
+
+    // Find the report bug button on landing screen
+    const bugBtn = await screen.findByRole("button", { name: /report a bug/i });
+    expect(bugBtn).toBeInTheDocument();
+
+    // Click to open modal
+    fireEvent.click(bugBtn);
+
+    expect(screen.getByRole("dialog", { name: /report a bug/i })).toBeInTheDocument();
+    const textarea = screen.getByPlaceholderText(/what went wrong/i);
+    fireEvent.change(textarea, { target: { value: "Camera couldn't focus on QR" } });
+
+    // Submit report
+    const submitBtn = screen.getByRole("button", { name: /send report/i });
+    fireEvent.click(submitBtn);
+
+    await waitFor(() => {
+      expect(screen.getByText(/report received!/i)).toBeInTheDocument();
+    });
+
+    expect(capturedBody).toEqual(
+      expect.objectContaining({
+        message: "Camera couldn't focus on QR",
+        tableLabel: "Table 5",
+        screen: "landing"
+      })
+    );
+  });
 });

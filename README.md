@@ -110,10 +110,10 @@ The output is written as `qrs/table-1.png`, `qrs/table-2.png`, and so on. Use `T
 
 The schema covers dining tables and QR identities, customer and staff sessions, OTP challenges, menu categories and items, carts, orders, order items, state events, and idempotency keys.
 
-Local migrations run automatically when the API starts. For Cloudflare D1:
+Local migrations run automatically from `apps/api/migrations/*.sql` when the API starts. For Cloudflare D1:
 
 ```bash
-npx wrangler d1 execute D3_DB --remote --file=apps/api/schema.sql \
+npx wrangler d1 migrations apply D3_DB --remote \
 	--config apps/api/wrangler.jsonc
 ```
 

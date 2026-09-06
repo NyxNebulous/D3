@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { createTestConfig, type AppConfig } from "../src/config/env.js";
 import { openDatabase, createSqliteD1Adapter, type Database } from "../src/db/database.js";
 import { runMigrations } from "../src/db/migrations.js";
@@ -330,14 +330,14 @@ describe("D3 API V1 (Hono Unified Backend)", () => {
 
     const category = await adminAgent
       .post("/api/admin/menu/categories")
-      .send({ name: "Mains" })
+      .send({ name: "Specials" })
       .expect(201);
 
     const item = await adminAgent
       .post("/api/admin/menu/items")
       .send({
         categoryId: category.body.category.id,
-        name: "Paneer Tikka",
+        name: "Special Paneer Tikka",
         pricePaise: 17900,
         isVeg: true
       })
@@ -359,14 +359,17 @@ describe("D3 API V1 (Hono Unified Backend)", () => {
 
     await authenticateCustomer(server, agent);
 
-    const otherTable = server.database
-      .prepare("INSERT INTO dining_tables (label) VALUES (?)")
+    server.database
+      .prepare("INSERT OR IGNORE INTO dining_tables (label) VALUES (?)")
       .run("Table 9");
-    const otherTableId = Number(otherTable.lastInsertRowid);
+    const otherTable = server.database
+      .prepare("SELECT id FROM dining_tables WHERE label = ?")
+      .get("Table 9") as { id: number };
+    const otherTableId = otherTable.id;
     const otherQrId = "table-9";
 
     server.database
-      .prepare("INSERT INTO table_qr_codes (qr_identifier, dining_table_id) VALUES (?, ?)")
+      .prepare("INSERT OR IGNORE INTO table_qr_codes (qr_identifier, dining_table_id) VALUES (?, ?)")
       .run(otherQrId, otherTableId);
 
     await agent
@@ -403,14 +406,17 @@ describe("D3 API V1 (Hono Unified Backend)", () => {
     expect(order1.body.order.tableLabel).toBe("Table 7");
 
     // 3. Asha moves and scans Table 9
-    const otherTable = server.database
-      .prepare("INSERT INTO dining_tables (label) VALUES (?)")
+    server.database
+      .prepare("INSERT OR IGNORE INTO dining_tables (label) VALUES (?)")
       .run("Table 9");
-    const otherTableId = Number(otherTable.lastInsertRowid);
+    const otherTable = server.database
+      .prepare("SELECT id FROM dining_tables WHERE label = ?")
+      .get("Table 9") as { id: number };
+    const otherTableId = otherTable.id;
     const otherQrId = "table-9";
 
     server.database
-      .prepare("INSERT INTO table_qr_codes (qr_identifier, dining_table_id) VALUES (?, ?)")
+      .prepare("INSERT OR IGNORE INTO table_qr_codes (qr_identifier, dining_table_id) VALUES (?, ?)")
       .run(otherQrId, otherTableId);
 
     await agent
@@ -490,12 +496,15 @@ describe("D3 API V1 (Hono Unified Backend)", () => {
     const database = openDatabase(config.databasePath);
     runMigrations(database);
 
-    const table = database.prepare("INSERT INTO dining_tables (label) VALUES (?)").run("Table 7");
+    database.prepare("INSERT OR IGNORE INTO dining_tables (label) VALUES (?)").run("Table 7");
+    const table = database
+      .prepare("SELECT id FROM dining_tables WHERE label = ?")
+      .get("Table 7") as { id: number };
     const qrId = "prod-otp-check";
 
     database
-      .prepare("INSERT INTO table_qr_codes (qr_identifier, dining_table_id) VALUES (?, ?)")
-      .run(qrId, Number(table.lastInsertRowid));
+      .prepare("INSERT OR IGNORE INTO table_qr_codes (qr_identifier, dining_table_id) VALUES (?, ?)")
+      .run(qrId, table.id);
 
     const d1Database = createSqliteD1Adapter(database);
     const app = createHonoApp({
@@ -520,19 +529,105 @@ describe("D3 API V1 (Hono Unified Backend)", () => {
 
     expect(otpResponse.body).not.toHaveProperty("devOtp");
   });
+
+  it("forwards bug reports to Telegram with context", async () => {
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation(async () => {
+      return new Response(JSON.stringify({ ok: true, result: { message_id: 123 } }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" }
+      });
+    });
+
+    const server = createTestServer({
+      telegramBotToken: "test-bot-token-123",
+      telegramChatId: "test-chat-456"
+    });
+    const agent = new HonoTestAgent(server.app);
+
+    // 1. Rejects empty message
+    await agent
+      .post("/api/bug-reports")
+      .send({ message: "" })
+      .expect(400);
+
+    // 2. Anonymous submission from landing screen
+    const anonRes = await agent
+      .post("/api/bug-reports")
+      .send({
+        message: "QR code was slightly blurry",
+        tableLabel: "Table 7",
+        screen: "landing"
+      })
+      .expect(200);
+
+    expect(anonRes.body).toEqual({ success: true, delivered: true });
+    expect(fetchSpy).toHaveBeenCalledWith(
+      "https://api.telegram.org/bottest-bot-token-123/sendMessage",
+      expect.objectContaining({
+        method: "POST",
+        headers: { "Content-Type": "application/json" }
+      })
+    );
+
+    const firstCallBody = JSON.parse(fetchSpy.mock.calls[0][1]?.body as string);
+    expect(firstCallBody.chat_id).toBe("test-chat-456");
+    expect(firstCallBody.text).toContain("QR code was slightly blurry");
+    expect(firstCallBody.text).toContain("<b>Screen:</b> landing");
+    expect(firstCallBody.text).toContain("<b>Table:</b> Table 7");
+    expect(firstCallBody.text).toContain("<b>Customer:</b> Anonymous");
+    expect(firstCallBody.parse_mode).toBe("HTML");
+
+    // 3. Authenticated submission attaches customer details automatically
+    await authenticateCustomer(server, agent);
+
+    const authRes = await agent
+      .post("/api/bug-reports")
+      .send({
+        message: "Order status didn't update",
+        screen: "orders"
+      })
+      .expect(200);
+
+    expect(authRes.body).toEqual({ success: true, delivered: true });
+
+    const secondCallBody = JSON.parse(fetchSpy.mock.calls[1][1]?.body as string);
+    expect(secondCallBody.text).toContain("Order status didn't update");
+    expect(secondCallBody.text).toContain("<b>Customer:</b> Asha (+919876543210)");
+    expect(secondCallBody.text).toContain("<b>Screen:</b> orders");
+
+    fetchSpy.mockRestore();
+  });
+
+  it("handles unconfigured Telegram gracefully", async () => {
+    const server = createTestServer();
+    const agent = new HonoTestAgent(server.app);
+
+    const res = await agent
+      .post("/api/bug-reports")
+      .send({ message: "Everything is fine" })
+      .expect(200);
+
+    expect(res.body).toEqual({ success: true, delivered: false });
+  });
 });
 
-function createTestServer(): TestServer {
+function createTestServer(options?: {
+  telegramBotToken?: string;
+  telegramChatId?: string;
+}): TestServer {
   const config = createTestConfig();
   const database = openDatabase(config.databasePath);
   runMigrations(database);
 
-  const table = database.prepare("INSERT INTO dining_tables (label) VALUES (?)").run("Table 7");
-  const tableId = Number(table.lastInsertRowid);
+  database.prepare("INSERT OR IGNORE INTO dining_tables (label) VALUES (?)").run("Table 7");
+  const table = database
+    .prepare("SELECT id FROM dining_tables WHERE label = ?")
+    .get("Table 7") as { id: number };
+  const tableId = table.id;
   const qrId = "fixture-table-7";
 
   database
-    .prepare("INSERT INTO table_qr_codes (qr_identifier, dining_table_id) VALUES (?, ?)")
+    .prepare("INSERT OR IGNORE INTO table_qr_codes (qr_identifier, dining_table_id) VALUES (?, ?)")
     .run(qrId, tableId);
 
   const category = database
@@ -548,7 +643,7 @@ function createTestServer(): TestServer {
     .run(Number(category.lastInsertRowid), "Fixture Item", 12500, 0);
 
   database
-    .prepare("INSERT INTO staff_users (username, password_hash) VALUES (?, ?)")
+    .prepare("INSERT OR IGNORE INTO staff_users (username, password_hash) VALUES (?, ?)")
     .run("manager", hashPassword("manager-password"));
 
   const d1Database = createSqliteD1Adapter(database);
@@ -557,7 +652,9 @@ function createTestServer(): TestServer {
     HMAC_SECRET: config.qrSecret,
     SESSION_SECRET: config.sessionSecret,
     CORS_ORIGIN: config.corsOrigin,
-    NODE_ENV: config.nodeEnv
+    NODE_ENV: config.nodeEnv,
+    TELEGRAM_BOT_TOKEN: options?.telegramBotToken,
+    TELEGRAM_CHAT_ID: options?.telegramChatId
   });
 
   return {

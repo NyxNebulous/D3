@@ -1,6 +1,6 @@
 -- D3 Restaurant System: Production Seed Data for Cloudflare D1
 
--- 1. Dining Tables (1 to 10)
+-- 1. Dining Tables (1 to 16)
 INSERT OR IGNORE INTO dining_tables (id, label) VALUES
   (1, 'Table 1'),
   (2, 'Table 2'),
@@ -19,7 +19,7 @@ INSERT OR IGNORE INTO dining_tables (id, label) VALUES
   (15, 'Table 15'),
   (16, 'Table 16');
 
--- 2. Table QR Codes (qr-table-1 to qr-table-10)
+-- 2. Table QR Codes (qr-table-1 to qr-table-16)
 INSERT OR IGNORE INTO table_qr_codes (id, qr_identifier, dining_table_id) VALUES
   (1, 'qr-table-1', 1),
   (2, 'qr-table-2', 2),

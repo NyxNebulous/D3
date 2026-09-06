@@ -1,5 +1,5 @@
 import type { FormEvent } from "react";
-import { ArrowRight } from "lucide-react";
+import { ArrowRight, Bug } from "lucide-react";
 import { Notice, type NoticeVariant } from "../../../components/Notice.js";
 import { ThemeToggle } from "../../../components/ThemeToggle.js";
 
@@ -18,6 +18,7 @@ type AuthScreenProps = {
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
   busy: boolean;
   notice: NoticeState | null;
+  onReportBug?: () => void;
 };
 
 export function AuthScreen({
@@ -28,11 +29,23 @@ export function AuthScreen({
   onMobileNumberChange,
   onSubmit,
   busy,
-  notice
+  notice,
+  onReportBug
 }: AuthScreenProps) {
   return (
     <section className="flex flex-col flex-1 min-h-0 overflow-y-auto p-6 px-5 items-stretch justify-center relative">
-      <div className="absolute top-5 right-5">
+      <div className="absolute top-5 right-5 flex items-center gap-2">
+        {onReportBug ? (
+          <button
+            onClick={onReportBug}
+            type="button"
+            className="p-2 rounded-xl border border-hairline bg-surface-2 hover:bg-surface-3 text-clay hover:text-ember transition cursor-pointer flex items-center justify-center shadow-xs"
+            title="Report a bug"
+            aria-label="Report a bug"
+          >
+            <Bug size={16} />
+          </button>
+        ) : null}
         <ThemeToggle size={16} />
       </div>
       <div className="bg-surface-2 border border-hairline rounded-3xl p-7 px-6 shadow-[0_20px_50px_rgba(0,0,0,0.4)] flex flex-col">

@@ -10,7 +10,8 @@
     {
       "binding": "D3_DB",
       "database_name": "D3_DB",
-      "database_id": "cc73ec7d-4fac-43a7-8f77-9eefe008a029"
+      "database_id": "cc73ec7d-4fac-43a7-8f77-9eefe008a029",
+      "migrations_dir": "migrations"
     }
   ],
   "vars": {

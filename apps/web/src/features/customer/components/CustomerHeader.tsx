@@ -1,11 +1,12 @@
-import { UtensilsCrossed, Wine } from "lucide-react";
+import { Bug, UtensilsCrossed, Wine } from "lucide-react";
 import { ThemeToggle } from "../../../components/ThemeToggle.js";
 
 type CustomerHeaderProps = {
   customerTableText: string;
+  onReportBug?: () => void;
 };
 
-export function CustomerHeader({ customerTableText }: CustomerHeaderProps) {
+export function CustomerHeader({ customerTableText, onReportBug }: CustomerHeaderProps) {
   return (
     <header className="p-4 px-5 border-b border-hairline flex items-center justify-between gap-3 shrink-0 bg-surface-1/60 backdrop-blur-md z-10">
       <div className="flex items-center gap-3">
@@ -24,6 +25,17 @@ export function CustomerHeader({ customerTableText }: CustomerHeaderProps) {
           <Wine size={13} className="text-ember" aria-hidden="true" />
           <span>{customerTableText}</span>
         </div>
+        {onReportBug ? (
+          <button
+            onClick={onReportBug}
+            type="button"
+            className="p-1.5 rounded-full border border-hairline bg-surface-2 hover:bg-surface-3 text-clay hover:text-ember transition cursor-pointer flex items-center justify-center shadow-xs"
+            title="Report a bug"
+            aria-label="Report a bug"
+          >
+            <Bug size={14} />
+          </button>
+        ) : null}
         <ThemeToggle size={14} className="p-1.5 rounded-full" />
       </div>
     </header>

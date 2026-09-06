@@ -39,6 +39,8 @@ export type Env = {
   CORS_ORIGIN?: string;
   NODE_ENV?: string;
   ADMIN_INITIAL_PASSWORD?: string;
+  TELEGRAM_BOT_TOKEN?: string;
+  TELEGRAM_CHAT_ID?: string;
 };
 
 export type CustomerSession = {

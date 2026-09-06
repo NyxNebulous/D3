@@ -51,6 +51,22 @@ CREATE TABLE IF NOT EXISTS customer_sessions (
 CREATE INDEX IF NOT EXISTS idx_customer_sessions_hash ON customer_sessions(token_hash);
 CREATE INDEX IF NOT EXISTS idx_customer_sessions_customer ON customer_sessions(customer_id);
 
+CREATE TABLE IF NOT EXISTS otp_challenges (
+  id TEXT PRIMARY KEY,
+  pre_session_id INTEGER NOT NULL REFERENCES pre_verification_sessions(id),
+  name TEXT NOT NULL,
+  mobile_number TEXT NOT NULL,
+  otp_hash TEXT NOT NULL,
+  salt TEXT NOT NULL,
+  attempts INTEGER NOT NULL DEFAULT 0 CHECK (attempts >= 0),
+  expires_at TEXT NOT NULL,
+  consumed_at TEXT,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_otp_challenges_pre_session ON otp_challenges(pre_session_id);
+CREATE INDEX IF NOT EXISTS idx_otp_challenges_mobile ON otp_challenges(mobile_number);
+
 CREATE TABLE IF NOT EXISTS staff_users (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   username TEXT NOT NULL UNIQUE,

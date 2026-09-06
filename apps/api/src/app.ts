@@ -477,6 +477,69 @@ export function createHonoApp(injectedEnv?: Partial<Env>) {
   });
 
   // -------------------------------------------------------------
+  // 5b. Bug Reports & Beta Feedback (Dispatched to Telegram)
+  // -------------------------------------------------------------
+  app.post("/api/bug-reports", async (c) => {
+    const rawBody = await c.req.json().catch(() => ({}));
+    const message = typeof rawBody.message === "string" ? rawBody.message.trim() : "";
+    if (!message) {
+      return c.json({ error: "Message is required" }, 400);
+    }
+
+    const session = await requireCustomer(c).catch(() => null);
+    const userAgent = c.req.header("User-Agent") || undefined;
+
+    const customerName = session?.customerName ?? (typeof rawBody.customerName === "string" ? rawBody.customerName.trim() : null);
+    const customerMobile = session?.customerMobile ?? (typeof rawBody.customerMobile === "string" ? rawBody.customerMobile.trim() : null);
+    const tableLabel = session?.tableLabel ?? (typeof rawBody.tableLabel === "string" ? rawBody.tableLabel.trim() : null);
+    const screen = typeof rawBody.screen === "string" ? rawBody.screen.trim() : null;
+
+    const botToken = c.env.TELEGRAM_BOT_TOKEN;
+    const chatId = c.env.TELEGRAM_CHAT_ID;
+
+    if (!botToken || !chatId) {
+      console.warn("TELEGRAM_BOT_TOKEN or TELEGRAM_CHAT_ID not configured; report received but not delivered to Telegram");
+      return c.json({ success: true, delivered: false });
+    }
+
+    const escapeHtml = (text: string) =>
+      text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+
+    const lines = [
+      `<b>D3 Beta Bug Report</b>`,
+      ``,
+      `<b>Feedback:</b> ${escapeHtml(message)}`,
+      `<b>Screen:</b> ${screen ? escapeHtml(screen) : "N/A"}`,
+      `<b>Table:</b> ${tableLabel ? escapeHtml(tableLabel) : "N/A"}`,
+      `<b>Customer:</b> ${customerName ? escapeHtml(customerName) : "Anonymous"}${customerMobile ? ` (${escapeHtml(customerMobile)})` : ""}`,
+      `🌐 <b>User Agent:</b> ${userAgent ? escapeHtml(userAgent) : "N/A"}`
+    ];
+
+    try {
+      const response = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          chat_id: chatId,
+          text: lines.join("\n"),
+          parse_mode: "HTML"
+        })
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text().catch(() => "");
+        console.error("Telegram API error:", response.status, errorText);
+        return c.json({ success: false, error: "Telegram dispatch failed" }, 502);
+      }
+
+      return c.json({ success: true, delivered: true });
+    } catch (err) {
+      console.error("Failed to forward bug report to Telegram:", err);
+      return c.json({ success: false, error: "Internal Telegram dispatch error" }, 500);
+    }
+  });
+
+  // -------------------------------------------------------------
   // 6. Admin Authentication & Dashboard
   // -------------------------------------------------------------
   async function requireStaff(c: any) {

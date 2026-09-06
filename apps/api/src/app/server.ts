@@ -17,7 +17,9 @@ const app = createHonoApp({
   HMAC_SECRET: config.qrSecret,
   SESSION_SECRET: config.sessionSecret,
   CORS_ORIGIN: config.corsOrigin,
-  NODE_ENV: config.nodeEnv
+  NODE_ENV: config.nodeEnv,
+  TELEGRAM_BOT_TOKEN: config.telegramBotToken,
+  TELEGRAM_CHAT_ID: config.telegramChatId
 });
 
 serve(
