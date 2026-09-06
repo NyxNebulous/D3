@@ -16,5 +16,21 @@ describe("shared V1 schemas", () => {
       quantity: 0
     });
   });
+
+  it("accepts batch cart item updates", () => {
+    expect(
+      updateCartItemSchema.parse({
+        items: [
+          { menuItemId: 1, quantity: 2 },
+          { menuItemId: 2, quantity: 0 }
+        ]
+      })
+    ).toEqual({
+      items: [
+        { menuItemId: 1, quantity: 2 },
+        { menuItemId: 2, quantity: 0 }
+      ]
+    });
+  });
 });
 

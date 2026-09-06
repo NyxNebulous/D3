@@ -609,6 +609,58 @@ describe("D3 API V1 (Hono Unified Backend)", () => {
 
     expect(res.body).toEqual({ success: true, delivered: false });
   });
+
+  it("supports updating multiple cart items in batch atomically", async () => {
+    const server = createTestServer();
+    const customerAgent = new HonoTestAgent(server.app);
+    await authenticateCustomer(server, customerAgent);
+
+    // Create a second menu item
+    const secondItem = server.database
+      .prepare(
+        `INSERT INTO menu_items (category_id, name, price_paise, sort_order)
+         VALUES (1, 'Second Item', 10000, 1)`
+      )
+      .run();
+    const secondItemId = Number(secondItem.lastInsertRowid);
+
+    // Send batch update
+    const response = await customerAgent
+      .put("/api/cart/items")
+      .send({
+        items: [
+          { menuItemId: server.menuItemId, quantity: 3 },
+          { menuItemId: secondItemId, quantity: 2 }
+        ]
+      })
+      .expect(200);
+
+    expect(response.body.cart.items).toHaveLength(2);
+    expect(response.body.cart.items).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ menuItemId: server.menuItemId, quantity: 3 }),
+        expect.objectContaining({ menuItemId: secondItemId, quantity: 2 })
+      ])
+    );
+    // Total should be 3 * 12500 + 2 * 10000 = 37500 + 20000 = 57500
+    expect(response.body.cart.totalPaise).toBe(57500);
+
+    // Batch removal of one item and update of another
+    const updatedResponse = await customerAgent
+      .put("/api/cart/items")
+      .send({
+        items: [
+          { menuItemId: server.menuItemId, quantity: 0 },
+          { menuItemId: secondItemId, quantity: 1 }
+        ]
+      })
+      .expect(200);
+
+    expect(updatedResponse.body.cart.items).toHaveLength(1);
+    expect(updatedResponse.body.cart.items[0].menuItemId).toBe(secondItemId);
+    expect(updatedResponse.body.cart.items[0].quantity).toBe(1);
+    expect(updatedResponse.body.cart.totalPaise).toBe(10000);
+  });
 });
 
 function createTestServer(options?: {

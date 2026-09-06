@@ -1,4 +1,4 @@
-import type { D1Database, CustomerSession, StaffSession } from "../types.js";
+import type { D1Database, D1PreparedStatement, CustomerSession, StaffSession } from "../types.js";
 
 export type MenuItemRecord = {
   id: number;
@@ -323,36 +323,49 @@ export async function getOrCreateCart(
   };
 }
 
+export async function setCartItems(
+  db: D1Database,
+  cartId: number,
+  items: Array<{ menuItemId: number; quantity: number }>
+) {
+  if (items.length === 0) return;
+
+  const statements: D1PreparedStatement[] = items.map((item) => {
+    if (item.quantity <= 0) {
+      return db
+        .prepare(`DELETE FROM cart_items WHERE cart_id = ? AND menu_item_id = ?`)
+        .bind(cartId, item.menuItemId);
+    } else {
+      return db
+        .prepare(
+          `
+          INSERT INTO cart_items (cart_id, menu_item_id, quantity)
+          VALUES (?, ?, ?)
+          ON CONFLICT(cart_id, menu_item_id) DO UPDATE SET
+            quantity = excluded.quantity,
+            updated_at = CURRENT_TIMESTAMP
+          `
+        )
+        .bind(cartId, item.menuItemId, item.quantity);
+    }
+  });
+
+  statements.push(
+    db
+      .prepare(`UPDATE carts SET updated_at = CURRENT_TIMESTAMP WHERE id = ?`)
+      .bind(cartId)
+  );
+
+  await db.batch(statements);
+}
+
 export async function setCartItem(
   db: D1Database,
   cartId: number,
   menuItemId: number,
   quantity: number
 ) {
-  if (quantity <= 0) {
-    await db
-      .prepare(`DELETE FROM cart_items WHERE cart_id = ? AND menu_item_id = ?`)
-      .bind(cartId, menuItemId)
-      .run();
-  } else {
-    await db
-      .prepare(
-        `
-        INSERT INTO cart_items (cart_id, menu_item_id, quantity)
-        VALUES (?, ?, ?)
-        ON CONFLICT(cart_id, menu_item_id) DO UPDATE SET
-          quantity = excluded.quantity,
-          updated_at = CURRENT_TIMESTAMP
-        `
-      )
-      .bind(cartId, menuItemId, quantity)
-      .run();
-  }
-
-  await db
-    .prepare(`UPDATE carts SET updated_at = CURRENT_TIMESTAMP WHERE id = ?`)
-    .bind(cartId)
-    .run();
+  return setCartItems(db, cartId, [{ menuItemId, quantity }]);
 }
 
 export async function clearCart(db: D1Database, cartId: number) {

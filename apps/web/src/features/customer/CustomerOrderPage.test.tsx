@@ -338,6 +338,211 @@ describe("CustomerOrderPage", () => {
     });
   });
 
+  it("does not remove or subtract other items when rapidly tapping multiple different products concurrently", async () => {
+    let resolveFirstPut: (val: Response) => void;
+    const firstPutPromise = new Promise<Response>((resolve) => {
+      resolveFirstPut = resolve;
+    });
+
+    let resolveSecondPut: (val: Response) => void;
+    const secondPutPromise = new Promise<Response>((resolve) => {
+      resolveSecondPut = resolve;
+    });
+
+    let putCallCount = 0;
+
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      const method = init?.method ?? "GET";
+
+      if (url.includes("/api/auth/customer/session")) {
+        return new Response(
+          JSON.stringify({
+            customer: { name: "Rohan", mobileNumber: "+919811122233" },
+            table: { label: "Table 1" }
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } }
+        );
+      }
+
+      if (url.includes("/api/menu")) {
+        return new Response(
+          JSON.stringify({
+            categories: [
+              {
+                id: 1,
+                name: "Mains",
+                sortOrder: 1,
+                items: [
+                  {
+                    id: 42,
+                    categoryId: 1,
+                    name: "Paneer Butter Masala",
+                    pricePaise: 24000,
+                    isVeg: true,
+                    sortOrder: 1
+                  },
+                  {
+                    id: 43,
+                    categoryId: 1,
+                    name: "Dal Makhani",
+                    pricePaise: 18000,
+                    isVeg: true,
+                    sortOrder: 2
+                  },
+                  {
+                    id: 44,
+                    categoryId: 1,
+                    name: "Butter Naan",
+                    pricePaise: 4000,
+                    isVeg: true,
+                    sortOrder: 3
+                  }
+                ]
+              }
+            ]
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } }
+        );
+      }
+
+      if (url.includes("/api/cart") && method === "PUT") {
+        putCallCount++;
+        if (putCallCount === 1) {
+          return firstPutPromise;
+        }
+        return secondPutPromise;
+      }
+
+      if (url.includes("/api/cart")) {
+        return new Response(JSON.stringify({ cart: { id: 1, items: [], totalPaise: 0 } }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" }
+        });
+      }
+
+      if (url.includes("/api/orders/current") || url.includes("/api/customer/orders")) {
+        return new Response(JSON.stringify({ orders: [] }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" }
+        });
+      }
+
+      return new Response("Not found", { status: 404 });
+    });
+
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<CustomerOrderPage qrId="" signature="" />);
+
+    await waitFor(() => {
+      expect(screen.getByText(/hi!?\s*rohan/i)).toBeInTheDocument();
+    });
+
+    // Navigate to menu
+    const menuButtons = screen.getAllByRole("button", { name: /menu/i });
+    fireEvent.click(menuButtons[0]!);
+
+    // Find "ADD +" buttons
+    const addPaneer = await screen.findByRole("button", { name: /add paneer butter masala/i });
+    const addDal = await screen.findByRole("button", { name: /add dal makhani/i });
+    const addNaan = await screen.findByRole("button", { name: /add butter naan/i });
+
+    // 1. Click Add on Paneer Butter Masala (first PUT request begins and is held in-flight)
+    fireEvent.click(addPaneer);
+
+    // 2. While first PUT is still in-flight, rapidly tap Add on Dal Makhani and Butter Naan
+    fireEvent.click(addDal);
+    fireEvent.click(addNaan);
+
+    // All 3 items should be visible optimistically with steppers showing quantity 1
+    expect(screen.getByRole("button", { name: /increase paneer butter masala/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /increase dal makhani/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /increase butter naan/i })).toBeInTheDocument();
+
+    // 3. Resolve the first PUT response, which only knows about Paneer Butter Masala
+    resolveFirstPut!(
+      new Response(
+        JSON.stringify({
+          cart: {
+            id: 1,
+            items: [
+              {
+                menuItemId: 42,
+                name: "Paneer Butter Masala",
+                categoryName: "Mains",
+                isVeg: true,
+                quantity: 1,
+                unitPricePaise: 24000,
+                lineTotalPaise: 24000
+              }
+            ],
+            totalPaise: 24000,
+            currency: "INR"
+          }
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } }
+      )
+    );
+
+    // Give React a moment to process the intermediate response
+    await new Promise((r) => setTimeout(r, 50));
+
+    // CRITICAL: Dal Makhani and Butter Naan MUST NOT have been removed!
+    expect(screen.getByRole("button", { name: /increase paneer butter masala/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /increase dal makhani/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /increase butter naan/i })).toBeInTheDocument();
+
+    // 4. Resolve the second batch PUT (which synced Dal and Naan)
+    resolveSecondPut!(
+      new Response(
+        JSON.stringify({
+          cart: {
+            id: 1,
+            items: [
+              {
+                menuItemId: 42,
+                name: "Paneer Butter Masala",
+                categoryName: "Mains",
+                isVeg: true,
+                quantity: 1,
+                unitPricePaise: 24000,
+                lineTotalPaise: 24000
+              },
+              {
+                menuItemId: 43,
+                name: "Dal Makhani",
+                categoryName: "Mains",
+                isVeg: true,
+                quantity: 1,
+                unitPricePaise: 18000,
+                lineTotalPaise: 18000
+              },
+              {
+                menuItemId: 44,
+                name: "Butter Naan",
+                categoryName: "Mains",
+                isVeg: true,
+                quantity: 1,
+                unitPricePaise: 4000,
+                lineTotalPaise: 4000
+              }
+            ],
+            totalPaise: 46000,
+            currency: "INR"
+          }
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } }
+      )
+    );
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: /increase paneer butter masala/i })).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: /increase dal makhani/i })).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: /increase butter naan/i })).toBeInTheDocument();
+    });
+  });
+
   it("displays previous orders from different tables in the orders screen after scanning another table", async () => {
     const previousOrder = {
       id: 88,

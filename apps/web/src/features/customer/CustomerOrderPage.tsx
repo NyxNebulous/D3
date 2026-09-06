@@ -91,6 +91,7 @@ export function CustomerOrderPage({ qrId, signature }: CustomerOrderPageProps) {
 
     setMenu(menuResponse.categories);
     setCart(cartResponse.cart);
+    syncedCartRef.current = cartResponse.cart;
     setOrders(ordersResponse.orders);
     setSelectedCategoryId((current) => current ?? menuResponse.categories[0]?.id ?? null);
   }, []);
@@ -156,6 +157,8 @@ export function CustomerOrderPage({ qrId, signature }: CustomerOrderPageProps) {
             }
             setSession(null);
             setCart(null);
+            syncedCartRef.current = null;
+            pendingSyncRef.current.clear();
             setOrders([]);
             setTableLabel(validated.table.label);
             setScreen("landing");
@@ -185,6 +188,8 @@ export function CustomerOrderPage({ qrId, signature }: CustomerOrderPageProps) {
           if (!mounted) return;
           setSession(null);
           setCart(null);
+          syncedCartRef.current = null;
+          pendingSyncRef.current.clear();
           setOrders([]);
           setTableLabel("");
           setScreen("landing");
@@ -250,15 +255,146 @@ export function CustomerOrderPage({ qrId, signature }: CustomerOrderPageProps) {
     }
   }
 
-  const latestTargetQtyRef = useRef<Map<number, number>>(new Map());
+  const menuRef = useRef<MenuCategory[]>(menu);
+  useEffect(() => {
+    menuRef.current = menu;
+  }, [menu]);
 
-  async function setQuantity(menuItemId: number, quantity: number) {
+  // Serialized, coalescing background sync queue to eliminate race conditions
+  const pendingSyncRef = useRef<Map<number, number>>(new Map());
+  const isSyncingRef = useRef<boolean>(false);
+  const syncedCartRef = useRef<Cart | null>(null);
+  const syncResolversRef = useRef<Array<() => void>>([]);
+
+  const triggerSync = useCallback(() => {
+    if (isSyncingRef.current) {
+      return;
+    }
+    if (pendingSyncRef.current.size === 0) {
+      const waiters = syncResolversRef.current;
+      syncResolversRef.current = [];
+      for (const resolve of waiters) resolve();
+      return;
+    }
+
+    isSyncingRef.current = true;
+
+    (async () => {
+      try {
+        while (pendingSyncRef.current.size > 0) {
+          // Take all pending entries as a batch to minimize Cloudflare roundtrips
+          const batchEntries = Array.from(pendingSyncRef.current.entries());
+          const batch = batchEntries.map(([menuItemId, quantity]) => ({
+            menuItemId,
+            quantity
+          }));
+
+          // Remove the entries we are currently sending
+          for (const [id] of batchEntries) {
+            pendingSyncRef.current.delete(id);
+          }
+
+          try {
+            const payload = batch.length === 1 ? batch[0] : { items: batch };
+            const response = await apiPut<{ cart: Cart }>("/api/cart/items", payload);
+
+            syncedCartRef.current = response.cart;
+
+            // Only overwrite local React items if NO newer mutations were queued while in-flight!
+            // If the user tapped other items while this request was traveling,
+            // pendingSyncRef will have new entries and response.cart is stale for those items.
+            if (pendingSyncRef.current.size === 0) {
+              setCart(response.cart);
+            } else {
+              setCart((current) => {
+                if (!current) return response.cart;
+                return {
+                  ...current,
+                  id: response.cart.id || current.id
+                };
+              });
+            }
+          } catch (error) {
+            // Revert ONLY the items from this failed batch using the last confirmed syncedCartRef
+            const fallbackCart = syncedCartRef.current;
+            setCart((currentCart) => {
+              if (!currentCart) return fallbackCart;
+              const fallbackItemsMap = new Map<number, CartItem>();
+              for (const item of fallbackCart?.items ?? []) {
+                fallbackItemsMap.set(item.menuItemId, item);
+              }
+
+              const failedIds = new Set(batch.map((b) => b.menuItemId));
+              const currentItems = currentCart.items;
+              const reconciledItems: CartItem[] = [];
+
+              for (const item of currentItems) {
+                if (failedIds.has(item.menuItemId) && !pendingSyncRef.current.has(item.menuItemId)) {
+                  const fallbackItem = fallbackItemsMap.get(item.menuItemId);
+                  if (fallbackItem && fallbackItem.quantity > 0) {
+                    reconciledItems.push(fallbackItem);
+                  }
+                } else {
+                  reconciledItems.push(item);
+                }
+              }
+
+              for (const b of batch) {
+                if (
+                  b.quantity === 0 &&
+                  !pendingSyncRef.current.has(b.menuItemId) &&
+                  !reconciledItems.some((i) => i.menuItemId === b.menuItemId)
+                ) {
+                  const fallbackItem = fallbackItemsMap.get(b.menuItemId);
+                  if (fallbackItem && fallbackItem.quantity > 0) {
+                    reconciledItems.push(fallbackItem);
+                  }
+                }
+              }
+
+              const totalPaise = reconciledItems.reduce((sum, i) => sum + i.lineTotalPaise, 0);
+              return {
+                id: currentCart.id,
+                items: reconciledItems,
+                totalPaise,
+                currency: "INR"
+              };
+            });
+
+            setNotice({
+              variant: "error",
+              title: "Cart update failed",
+              subtitle: error instanceof Error ? error.message : "Could not update item quantity."
+            });
+          }
+        }
+      } finally {
+        isSyncingRef.current = false;
+        if (pendingSyncRef.current.size > 0) {
+          triggerSync();
+        } else {
+          const waiters = syncResolversRef.current;
+          syncResolversRef.current = [];
+          for (const resolve of waiters) resolve();
+        }
+      }
+    })();
+  }, []);
+
+  const waitForCartSync = useCallback(async () => {
+    if (!isSyncingRef.current && pendingSyncRef.current.size === 0) {
+      return;
+    }
+    return new Promise<void>((resolve) => {
+      syncResolversRef.current.push(resolve);
+    });
+  }, []);
+
+  function setQuantity(menuItemId: number, quantity: number) {
     if (quantity < 0) return;
 
-    // Track the latest requested quantity to handle rapid successive taps
-    latestTargetQtyRef.current.set(menuItemId, quantity);
-
-    const previousCart = cart;
+    // Track the target quantity for the sync queue
+    pendingSyncRef.current.set(menuItemId, quantity);
 
     // Optimistically update React state immediately (0ms visual feedback)
     setCart((currentCart) => {
@@ -284,7 +420,7 @@ export function CustomerOrderPage({ qrId, signature }: CustomerOrderPageProps) {
         } else {
           // Find item details from menu categories
           let foundInfo: { name: string; categoryName: string; isVeg: boolean; pricePaise: number } | null = null;
-          for (const category of menu) {
+          for (const category of menuRef.current) {
             const match = category.items.find((i) => i.id === menuItemId);
             if (match) {
               foundInfo = {
@@ -324,39 +460,16 @@ export function CustomerOrderPage({ qrId, signature }: CustomerOrderPageProps) {
       };
     });
 
-    // Send API request in the background without freezing UI buttons
-    try {
-      const response = await apiPut<{ cart: Cart }>("/api/cart/items", {
-        menuItemId,
-        quantity
-      });
-
-      // Only commit server response if no newer quantity was requested for this item
-      if (latestTargetQtyRef.current.get(menuItemId) === quantity) {
-        latestTargetQtyRef.current.delete(menuItemId);
-        setCart(response.cart);
-      }
-    } catch (error) {
-      if (latestTargetQtyRef.current.get(menuItemId) === quantity) {
-        latestTargetQtyRef.current.delete(menuItemId);
-        setCart(previousCart);
-        setNotice({
-          variant: "error",
-          title: "Cart update failed",
-          subtitle: error instanceof Error ? error.message : "Could not update item quantity."
-        });
-      }
-    }
+    // Start background sync if not already active
+    triggerSync();
   }
 
   async function placeOrder() {
     setBusy(true);
     setNotice(null);
 
-    // If a cart update was just clicked, let in-flight update settle before ordering
-    if (latestTargetQtyRef.current.size > 0) {
-      await new Promise((resolve) => setTimeout(resolve, 300));
-    }
+    // Guarantee all pending/in-flight cart updates have settled before creating the order
+    await waitForCartSync();
 
     try {
       const response = await apiPost<{ order: Order }>(

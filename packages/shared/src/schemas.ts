@@ -57,12 +57,21 @@ export const verifyOtpSchema = z
   })
   .strict();
 
-export const updateCartItemSchema = z
+export const updateCartItemEntrySchema = z
   .object({
     menuItemId: positiveIdSchema,
     quantity: quantitySchema
   })
   .strict();
+
+export const updateCartItemSchema = z.union([
+  updateCartItemEntrySchema,
+  z
+    .object({
+      items: z.array(updateCartItemEntrySchema).min(1)
+    })
+    .strict()
+]);
 
 export const createOrderSchema = z.object({}).strict();
 

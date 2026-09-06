@@ -30,6 +30,7 @@ import {
   getMenuTree,
   getOrCreateCart,
   setCartItem,
+  setCartItems,
   clearCart,
   createOrderFromCart,
   getCustomerOrders,
@@ -365,7 +366,10 @@ export function createHonoApp(injectedEnv?: Partial<Env>) {
     if (!parse.success) {
       return c.json({ error: "Invalid item or quantity" }, 400);
     }
-    const { menuItemId, quantity } = parse.data;
+    const itemsToUpdate: Array<{ menuItemId: number; quantity: number }> =
+      "items" in parse.data
+        ? parse.data.items
+        : [{ menuItemId: parse.data.menuItemId, quantity: parse.data.quantity }];
 
     const { cart } = await getOrCreateCart(
       c.env.D3_DB,
@@ -374,7 +378,7 @@ export function createHonoApp(injectedEnv?: Partial<Env>) {
       session.diningTableId
     );
 
-    await setCartItem(c.env.D3_DB, cart.id, menuItemId, quantity);
+    await setCartItems(c.env.D3_DB, cart.id, itemsToUpdate);
 
     const updated = await getOrCreateCart(
       c.env.D3_DB,
