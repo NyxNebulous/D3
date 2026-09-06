@@ -382,6 +382,76 @@ describe("D3 API V1 (Hono Unified Backend)", () => {
       .expect(200);
   });
 
+  it("shows previous orders from different tables when user scans and logs into another table", async () => {
+    const server = createTestServer();
+    const agent = new HonoTestAgent(server.app);
+
+    // 1. Asha authenticates at Table 7
+    await authenticateCustomer(server, agent);
+
+    // 2. Asha places an order at Table 7
+    await agent
+      .put("/api/cart/items")
+      .send({ menuItemId: server.menuItemId, quantity: 2 })
+      .expect(200);
+
+    const order1 = await agent
+      .post("/api/orders")
+      .send({})
+      .expect(201);
+
+    expect(order1.body.order.tableLabel).toBe("Table 7");
+
+    // 3. Asha moves and scans Table 9
+    const otherTable = server.database
+      .prepare("INSERT INTO dining_tables (label) VALUES (?)")
+      .run("Table 9");
+    const otherTableId = Number(otherTable.lastInsertRowid);
+    const otherQrId = "table-9";
+
+    server.database
+      .prepare("INSERT INTO table_qr_codes (qr_identifier, dining_table_id) VALUES (?, ?)")
+      .run(otherQrId, otherTableId);
+
+    await agent
+      .post("/api/qr/validate")
+      .send({ qrId: otherQrId, signature: signQrId(otherQrId, server.config.qrSecret) })
+      .expect(200);
+
+    // 4. Asha logs into Table 9 with the same mobile number
+    await agent
+      .post("/api/auth/customer/login")
+      .send({ name: "Asha", mobileNumber: "+919876543210" })
+      .expect(200);
+
+    // 5. Previous order from Table 7 must be visible in orders section!
+    const table9OrdersRes = await agent.get("/api/orders/current").expect(200);
+    expect(table9OrdersRes.body.orders).toHaveLength(1);
+    expect(table9OrdersRes.body.orders[0].id).toBe(order1.body.order.id);
+    expect(table9OrdersRes.body.orders[0].tableLabel).toBe("Table 7");
+
+    // 6. Asha places a new order at Table 9
+    await agent
+      .put("/api/cart/items")
+      .send({ menuItemId: server.menuItemId, quantity: 1 })
+      .expect(200);
+
+    const order2 = await agent
+      .post("/api/orders")
+      .send({})
+      .expect(201);
+
+    expect(order2.body.order.tableLabel).toBe("Table 9");
+
+    // 7. Both orders from Table 9 and Table 7 must be visible in orders section!
+    const allOrdersRes = await agent.get("/api/orders/current").expect(200);
+    expect(allOrdersRes.body.orders).toHaveLength(2);
+    expect(allOrdersRes.body.orders[0].id).toBe(order2.body.order.id);
+    expect(allOrdersRes.body.orders[0].tableLabel).toBe("Table 9");
+    expect(allOrdersRes.body.orders[1].id).toBe(order1.body.order.id);
+    expect(allOrdersRes.body.orders[1].tableLabel).toBe("Table 7");
+  });
+
   it("authenticates a customer directly with name and mobile number after table QR validation", async () => {
     const server = createTestServer();
     const agent = new HonoTestAgent(server.app);

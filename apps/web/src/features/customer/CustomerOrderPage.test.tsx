@@ -337,4 +337,116 @@ describe("CustomerOrderPage", () => {
       expect(screen.getAllByText("1").length).toBeGreaterThanOrEqual(1);
     });
   });
+
+  it("displays previous orders from different tables in the orders screen after scanning another table", async () => {
+    const previousOrder = {
+      id: 88,
+      publicOrderNumber: "#101",
+      customerName: "Asha",
+      mobileNumber: "+919876543210",
+      tableLabel: "Table 1",
+      totalPaise: 24000,
+      currency: "INR",
+      paymentState: "PAID_OFFLINE",
+      fulfillmentState: "COMPLETED",
+      paidAt: new Date().toISOString(),
+      completedAt: new Date().toISOString(),
+      createdAt: new Date().toISOString(),
+      items: [
+        {
+          id: 1,
+          menuItemId: 42,
+          itemName: "Paneer Butter Masala",
+          isVeg: true,
+          quantity: 1,
+          unitPricePaise: 24000,
+          lineTotalPaise: 24000
+        }
+      ]
+    };
+
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+
+      if (url.includes("/api/qr/validate")) {
+        return new Response(
+          JSON.stringify({
+            token: "pre-token-table-2",
+            table: { label: "Table 2" },
+            sameTableSession: false
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } }
+        );
+      }
+
+      if (url.includes("/api/auth/customer/session")) {
+        return new Response(JSON.stringify({ error: "Session expired or revoked" }), { status: 401 });
+      }
+
+      if (url.includes("/api/auth/customer/login")) {
+        return new Response(
+          JSON.stringify({
+            customer: { name: "Asha", mobileNumber: "+919876543210" },
+            table: { label: "Table 2" },
+            session: { id: 202 }
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } }
+        );
+      }
+
+      if (url.includes("/api/menu")) {
+        return new Response(JSON.stringify({ categories: [] }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" }
+        });
+      }
+
+      if (url.includes("/api/cart")) {
+        return new Response(JSON.stringify({ cart: { id: 2, items: [], totalPaise: 0 } }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" }
+        });
+      }
+
+      if (url.includes("/api/orders/current") || url.includes("/api/customer/orders")) {
+        return new Response(JSON.stringify({ orders: [previousOrder] }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" }
+        });
+      }
+
+      return new Response("Not found", { status: 404 });
+    });
+
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<CustomerOrderPage qrId="table-2" signature="sig456" />);
+
+    // Click Order food from landing screen
+    const orderFoodBtn = await screen.findByRole("button", { name: /order food/i });
+    fireEvent.click(orderFoodBtn);
+
+    // Enter name & mobile to start ordering at Table 2
+    const nameInput = await screen.findByLabelText(/name/i);
+    const mobileInput = await screen.findByLabelText(/mobile number/i);
+    fireEvent.change(nameInput, { target: { value: "Asha" } });
+    fireEvent.change(mobileInput, { target: { value: "+919876543210" } });
+    fireEvent.click(screen.getByRole("button", { name: /start ordering/i }));
+
+    // Wait for home screen
+    await waitFor(() => {
+      expect(screen.getByText(/hi!?\s*asha/i)).toBeInTheDocument();
+    });
+
+    // Navigate to Orders screen
+    const ordersNavBtn = screen.getByRole("button", { name: /^orders$/i });
+    fireEvent.click(ordersNavBtn);
+
+    // Verify previous order from Table 1 is visible in orders section
+    await waitFor(() => {
+      expect(screen.getByText("#101")).toBeInTheDocument();
+      expect(screen.getByText("Table 1")).toBeInTheDocument();
+      expect(screen.getByText(/Paneer Butter Masala/i)).toBeInTheDocument();
+    });
+  });
 });

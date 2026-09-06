@@ -42,8 +42,20 @@ export function CustomerOrderPage({ qrId, signature }: CustomerOrderPageProps) {
   const [cart, setCart] = useState<Cart | null>(null);
   const [orders, setOrders] = useState<Order[]>([]);
   const [selectedCategoryId, setSelectedCategoryId] = useState<number | null>(null);
-  const [name, setName] = useState("");
-  const [mobileNumber, setMobileNumber] = useState("");
+  const [name, setName] = useState(() => {
+    try {
+      return localStorage.getItem("d3_customer_name") || "";
+    } catch {
+      return "";
+    }
+  });
+  const [mobileNumber, setMobileNumber] = useState(() => {
+    try {
+      return localStorage.getItem("d3_customer_mobile") || "";
+    } catch {
+      return "";
+    }
+  });
   const [busy, setBusy] = useState(false);
   const [isBooting, setIsBooting] = useState(true);
   const [notice, setNotice] = useState<NoticeState | null>(null);
@@ -136,6 +148,10 @@ export function CustomerOrderPage({ qrId, signature }: CustomerOrderPageProps) {
             if (validated.token) {
               setAuthToken(validated.token);
             }
+            if (session?.customer) {
+              setName((prev) => prev || session.customer.name);
+              setMobileNumber((prev) => prev || session.customer.mobileNumber);
+            }
             setSession(null);
             setCart(null);
             setOrders([]);
@@ -213,6 +229,10 @@ export function CustomerOrderPage({ qrId, signature }: CustomerOrderPageProps) {
       if (response.token) {
         setAuthToken(response.token);
       }
+      try {
+        localStorage.setItem("d3_customer_name", name);
+        localStorage.setItem("d3_customer_mobile", mobileNumber);
+      } catch {}
       setSession(response);
       setTableLabel(response.table.label);
       setScreen("home");

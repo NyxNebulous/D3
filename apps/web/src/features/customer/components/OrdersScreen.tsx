@@ -42,8 +42,15 @@ export function OrdersScreen({ customerTableText, orders, notice }: OrdersScreen
               >
                 <div className="flex justify-between items-start mb-2.5">
                   <div>
-                    <div className="text-[13px] font-bold text-parchment">
-                      {order.publicOrderNumber}
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-[13px] font-bold text-parchment">
+                        {order.publicOrderNumber}
+                      </span>
+                      {order.tableLabel ? (
+                        <span className="text-[10px] font-bold py-0.5 px-2 rounded-md bg-surface-2 text-clay border border-hairline uppercase tracking-wide">
+                          {order.tableLabel}
+                        </span>
+                      ) : null}
                     </div>
                     <div className="text-[11.5px] text-clay mt-0.5">
                       Placed {order.createdAt ? "recently" : "just now"}

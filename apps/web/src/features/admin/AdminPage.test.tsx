@@ -103,7 +103,7 @@ describe("AdminPage", () => {
 
     // After login, should see dashboard with Live Orders
     await waitFor(() => {
-      expect(screen.getByText(/d3 admin/i)).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: /^admin$/i })).toBeInTheDocument();
       expect(screen.getAllByText("ORD-001").length).toBeGreaterThanOrEqual(1);
       expect(screen.getAllByText(/table 4/i).length).toBeGreaterThanOrEqual(1);
     });

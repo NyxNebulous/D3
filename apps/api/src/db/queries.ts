@@ -574,7 +574,7 @@ export async function getCustomerOrders(
   db: D1Database,
   customerSessionId: number,
   customerId?: number,
-  diningTableId?: number
+  _diningTableId?: number
 ): Promise<OrderRecord[]> {
   let query = `
     SELECT id
@@ -583,15 +583,15 @@ export async function getCustomerOrders(
   `;
   const binds: (number | string)[] = [customerSessionId];
 
-  if (customerId && diningTableId) {
+  if (customerId) {
     query = `
       SELECT id
       FROM orders
       WHERE customer_session_id = ?
-         OR (customer_id = ? AND dining_table_id = ? AND datetime(created_at) > datetime('now', '-12 hours'))
+         OR (customer_id = ? AND (payment_state = 'UNPAID' OR datetime(created_at) > datetime('now', '-24 hours')))
       ORDER BY created_at DESC, id DESC
     `;
-    binds.push(customerId, diningTableId);
+    binds.push(customerId);
   } else {
     query += ` ORDER BY created_at DESC, id DESC`;
   }
