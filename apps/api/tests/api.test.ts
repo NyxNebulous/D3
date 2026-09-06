@@ -164,6 +164,14 @@ describe("D3 API V1 (Hono Unified Backend)", () => {
       .send({ qrId: server.qrId, signature: "0".repeat(64) })
       .expect(400);
 
+    await agent
+      .post("/api/qr/validate")
+      .send({
+        qrId: server.qrId,
+        signature: signQrId(server.qrId, "d3-production-qr-secret-replace-with-yours")
+      })
+      .expect(400);
+
     const response = await agent
       .post("/api/qr/validate")
       .send({ qrId: server.qrId, signature: server.qrSignature })

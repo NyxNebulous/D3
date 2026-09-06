@@ -8,7 +8,7 @@
     "build": "tsc -p tsconfig.json",
     "dev": "D3_ENABLE_DEV_SEED=true tsx watch --env-file=../../.env --conditions development src/app/server.ts",
     "test": "vitest run",
-    "generate-qr": "tsx scripts/generate-table-qrs.ts",
+    "generate-qr": "tsx --env-file=../../.env scripts/generate-table-qrs.ts",
     "set-admin": "tsx scripts/set-admin.ts",
     "pretypecheck": "npm run build --workspace @d3/shared",
     "typecheck": "tsc -p tsconfig.json --noEmit"

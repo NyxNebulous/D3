@@ -18,7 +18,6 @@ export function LandingScreen({ customerTableText, onProceed, notice }: LandingS
         <div className="w-14 h-14 rounded-lg bg-ember flex items-center justify-center text-[22px] font-extrabold text-[#1a0d06] tracking-tight mb-5 shrink-0">
           D3
         </div>
-        <h1 className="text-[22px] font-bold tracking-wide text-parchment mb-1">D3</h1>
         <p className="text-[13px] text-clay mb-6">
           {customerTableText ? `${customerTableText} · Scan confirmed` : "Scan table QR code"}
         </p>

@@ -6,10 +6,10 @@ function signQrId(qrId: string, secret: string): string {
 
 const frontendBaseUrl =
   process.env.FRONTEND_URL ?? "https://d3-restaurant.pages.dev";
-const qrSecret =
-  process.env.HMAC_SECRET ??
-  process.env.QR_SECRET ??
-  "d3-production-qr-secret-replace-with-yours";
+const qrSecret = process.env.HMAC_SECRET;
+if (!qrSecret) {
+  throw new Error("HMAC_SECRET is required to generate QR codes");
+}
 const tableCount = Number(process.env.TABLE_COUNT ?? "16");
 
 console.log("\n=======================================================");

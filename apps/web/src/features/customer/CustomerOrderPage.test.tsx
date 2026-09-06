@@ -11,6 +11,39 @@ describe("CustomerOrderPage", () => {
     clearAuthToken();
   });
 
+  it("shows a loading state while validating a scanned QR code", async () => {
+    let resolveValidation!: (response: Response) => void;
+    const validation = new Promise<Response>((resolve) => {
+      resolveValidation = resolve;
+    });
+
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      if (String(input).includes("/api/qr/validate")) {
+        return validation;
+      }
+
+      return new Response("Not found", { status: 404 });
+    });
+
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<CustomerOrderPage qrId="table-3" signature="abc123" />);
+
+    expect(screen.getByText("Checking your table...")).toBeInTheDocument();
+    expect(screen.queryByText(/please scan the qr code/i)).not.toBeInTheDocument();
+
+    resolveValidation(
+      new Response(JSON.stringify({ table: { label: "Table 3" } }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" }
+      })
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText(/Table 3\s*·\s*Scan confirmed/i)).toBeInTheDocument();
+    });
+  });
+
   it("renders the direct login form with Name and Mobile number and starts ordering", async () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);

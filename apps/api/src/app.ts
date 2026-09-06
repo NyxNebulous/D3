@@ -141,11 +141,12 @@ export function createHonoApp(injectedEnv?: Partial<Env>) {
     }
     const { qrId, signature } = parse.data;
 
-    const qrSecret =
-      c.env.HMAC_SECRET || c.env.QR_SECRET || "d3-production-qr-secret-replace-with-yours";
-    const isValid =
-      verifyQrSignature(qrId, signature, qrSecret) ||
-      verifyQrSignature(qrId, signature, "d3-production-qr-secret-replace-with-yours");
+    const qrSecret = c.env.HMAC_SECRET;
+    if (!qrSecret) {
+      return c.json({ error: "QR validation is not configured" }, 500);
+    }
+
+    const isValid = verifyQrSignature(qrId, signature, qrSecret);
     if (!isValid) {
       return c.json({ error: "Invalid QR code" }, 400);
     }

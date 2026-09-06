@@ -45,6 +45,7 @@ export function CustomerOrderPage({ qrId, signature }: CustomerOrderPageProps) {
   const [name, setName] = useState("");
   const [mobileNumber, setMobileNumber] = useState("");
   const [busy, setBusy] = useState(false);
+  const [isBooting, setIsBooting] = useState(true);
   const [notice, setNotice] = useState<NoticeState | null>(null);
 
   const cartQuantities = useMemo(() => {
@@ -84,90 +85,94 @@ export function CustomerOrderPage({ qrId, signature }: CustomerOrderPageProps) {
     let mounted = true;
 
     async function boot() {
-      // 1. If QR parameters are provided in URL, prioritize validating the scanned table QR!
-      if (qrId && signature) {
-        try {
-          const validated = await apiPost<{
-            token?: string;
-            table: { label: string };
-            sameTableSession?: boolean;
-          }>("/api/qr/validate", {
-            qrId,
-            signature
-          });
+      try {
+        // 1. If QR parameters are provided in URL, prioritize validating the scanned table QR!
+        if (qrId && signature) {
+          try {
+            const validated = await apiPost<{
+              token?: string;
+              table: { label: string };
+              sameTableSession?: boolean;
+            }>("/api/qr/validate", {
+              qrId,
+              signature
+            });
 
+            if (!mounted) return;
+
+            // Check if the customer already has an active session for THIS SAME table
+            let isSameTable = validated.sameTableSession;
+            if (isSameTable === undefined) {
+              try {
+                const existing = await apiGet<SessionContext>("/api/auth/customer/session");
+                isSameTable = existing.table.label === validated.table.label;
+                if (isSameTable && mounted) {
+                  setSession(existing);
+                  setTableLabel(existing.table.label);
+                  setScreen("home");
+                  await loadCustomerData();
+                  return;
+                }
+              } catch {
+                isSameTable = false;
+              }
+            } else if (isSameTable) {
+              try {
+                const existing = await apiGet<SessionContext>("/api/auth/customer/session");
+                if (mounted) {
+                  setSession(existing);
+                  setTableLabel(existing.table.label);
+                  setScreen("home");
+                  await loadCustomerData();
+                  return;
+                }
+              } catch {
+                isSameTable = false;
+              }
+            }
+
+            // New table or no active session for this table:
+            // Replace auth token with new pre-session token, clear old session state, and land on new table
+            if (validated.token) {
+              setAuthToken(validated.token);
+            }
+            setSession(null);
+            setCart(null);
+            setOrders([]);
+            setTableLabel(validated.table.label);
+            setScreen("landing");
+            return;
+          } catch (error) {
+            if (!mounted) return;
+            setNotice({
+              variant: "error",
+              title: "Invalid QR",
+              subtitle: error instanceof Error ? error.message : "The table QR could not be validated."
+            });
+            setScreen("landing");
+            return;
+          }
+        }
+
+        // 2. If NO QR parameters in URL (e.g. reload on root / without params)
+        try {
+          const existing = await apiGet<SessionContext>("/api/auth/customer/session");
           if (!mounted) return;
 
-          // Check if the customer already has an active session for THIS SAME table
-          let isSameTable = validated.sameTableSession;
-          if (isSameTable === undefined) {
-            try {
-              const existing = await apiGet<SessionContext>("/api/auth/customer/session");
-              isSameTable = existing.table.label === validated.table.label;
-              if (isSameTable && mounted) {
-                setSession(existing);
-                setTableLabel(existing.table.label);
-                setScreen("home");
-                await loadCustomerData();
-                return;
-              }
-            } catch {
-              isSameTable = false;
-            }
-          } else if (isSameTable) {
-            try {
-              const existing = await apiGet<SessionContext>("/api/auth/customer/session");
-              if (mounted) {
-                setSession(existing);
-                setTableLabel(existing.table.label);
-                setScreen("home");
-                await loadCustomerData();
-                return;
-              }
-            } catch {
-              isSameTable = false;
-            }
-          }
-
-          // New table or no active session for this table:
-          // Replace auth token with new pre-session token, clear old session state, and land on new table
-          if (validated.token) {
-            setAuthToken(validated.token);
-          }
+          setSession(existing);
+          setTableLabel(existing.table.label);
+          setScreen("home");
+          await loadCustomerData();
+        } catch {
+          if (!mounted) return;
           setSession(null);
           setCart(null);
           setOrders([]);
-          setTableLabel(validated.table.label);
+          setTableLabel("");
           setScreen("landing");
-          return;
-        } catch (error) {
-          if (!mounted) return;
-          setNotice({
-            variant: "error",
-            title: "Invalid QR",
-            subtitle: error instanceof Error ? error.message : "The table QR could not be validated."
-          });
-          setScreen("landing");
-          return;
         }
-      }
-
-      // 2. If NO QR parameters in URL (e.g. reload on root / without params)
-      try {
-        const existing = await apiGet<SessionContext>("/api/auth/customer/session");
-        if (!mounted) return;
-
-        setSession(existing);
-        setTableLabel(existing.table.label);
-        setScreen("home");
-        await loadCustomerData();
-      } catch {
-        if (!mounted) return;
-        setSession(null);
-        setCart(null);
-        setOrders([]);
-        setTableLabel("");
-        setScreen("landing");
+      } finally {
+        if (mounted) setIsBooting(false);
       }
     }
 
@@ -367,11 +372,27 @@ export function CustomerOrderPage({ qrId, signature }: CustomerOrderPageProps) {
   return (
     <div className="h-full w-full bg-canvas flex justify-center overflow-hidden">
       <div className="w-full max-w-[480px] h-full flex flex-col bg-ink relative overflow-hidden">
-        {HEADER_SCREENS.includes(screen) ? (
+        {isBooting ? (
+          <section
+            className="flex flex-col flex-1 min-h-dvh justify-center items-center bg-[radial-gradient(circle_at_30%_20%,rgba(255,107,53,0.18),transparent_55%),radial-gradient(circle_at_75%_75%,rgba(255,107,53,0.1),transparent_50%),theme(colors.ink)] p-5"
+            aria-live="polite"
+            aria-busy="true"
+          >
+            <div className="flex flex-col items-center text-center">
+              <div className="w-14 h-14 rounded-lg bg-ember flex items-center justify-center text-[22px] font-extrabold text-[#1a0d06] tracking-tight mb-5">
+                D3
+              </div>
+              <div className="w-6 h-6 rounded-full border-2 border-ember/30 border-t-ember animate-spin mb-4" />
+              <p className="text-[13px] text-clay">Checking your table...</p>
+            </div>
+          </section>
+        ) : null}
+
+        {!isBooting && HEADER_SCREENS.includes(screen) ? (
           <CustomerHeader customerTableText={customerTableText} />
         ) : null}
 
-        {screen === "landing" ? (
+        {!isBooting && screen === "landing" ? (
           <LandingScreen
             customerTableText={customerTableText}
             onProceed={() => setScreen(session ? "home" : "auth")}
@@ -379,7 +400,7 @@ export function CustomerOrderPage({ qrId, signature }: CustomerOrderPageProps) {
           />
         ) : null}
 
-        {screen === "auth" ? (
+        {!isBooting && screen === "auth" ? (
           <AuthScreen
             customerTableText={customerTableText}
             name={name}
@@ -392,7 +413,7 @@ export function CustomerOrderPage({ qrId, signature }: CustomerOrderPageProps) {
           />
         ) : null}
 
-        {screen === "home" ? (
+        {!isBooting && screen === "home" ? (
           <HomeScreen
             session={session}
             customerTableText={customerTableText}
@@ -405,7 +426,7 @@ export function CustomerOrderPage({ qrId, signature }: CustomerOrderPageProps) {
           />
         ) : null}
 
-        {screen === "menu" ? (
+        {!isBooting && screen === "menu" ? (
           <MenuScreen
             customerTableText={customerTableText}
             menu={menu}
@@ -420,7 +441,7 @@ export function CustomerOrderPage({ qrId, signature }: CustomerOrderPageProps) {
           />
         ) : null}
 
-        {screen === "cart" ? (
+        {!isBooting && screen === "cart" ? (
           <CartScreen
             cart={cart}
             cartCount={cartCount}
@@ -431,7 +452,7 @@ export function CustomerOrderPage({ qrId, signature }: CustomerOrderPageProps) {
           />
         ) : null}
 
-        {screen === "orders" ? (
+        {!isBooting && screen === "orders" ? (
           <OrdersScreen
             customerTableText={customerTableText}
             orders={orders}
@@ -439,7 +460,7 @@ export function CustomerOrderPage({ qrId, signature }: CustomerOrderPageProps) {
           />
         ) : null}
 
-        {showNav ? (
+        {!isBooting && showNav ? (
           <CustomerBottomNav
             activeScreen={screen}
             cartCount={cartCount}
