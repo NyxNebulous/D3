@@ -109,35 +109,72 @@ export async function apiDelete<T>(path: string): Promise<T> {
   });
 }
 
-let activeAuthToken: string | null = null;
+let activeCustomerToken: string | null = null;
+let activeStaffToken: string | null = null;
 
-export function setAuthToken(token: string | null | undefined) {
-  activeAuthToken = token ?? null;
+export function setCustomerToken(token: string | null | undefined) {
+  activeCustomerToken = token ?? null;
   if (token) {
     try {
-      sessionStorage.setItem("d3_auth_token", token);
+      sessionStorage.setItem("d3_customer_token", token);
     } catch {}
   } else {
     try {
+      sessionStorage.removeItem("d3_customer_token");
       sessionStorage.removeItem("d3_auth_token");
     } catch {}
   }
 }
 
-export function getAuthToken(): string | null {
-  if (activeAuthToken) return activeAuthToken;
+export function getCustomerToken(): string | null {
+  if (activeCustomerToken) return activeCustomerToken;
   try {
-    activeAuthToken = sessionStorage.getItem("d3_auth_token");
+    activeCustomerToken =
+      sessionStorage.getItem("d3_customer_token") || sessionStorage.getItem("d3_auth_token");
   } catch {}
-  return activeAuthToken;
+  return activeCustomerToken;
 }
 
-export function clearAuthToken() {
-  setAuthToken(null);
+export function clearCustomerToken() {
+  setCustomerToken(null);
 }
+
+export function setStaffToken(token: string | null | undefined) {
+  activeStaffToken = token ?? null;
+  if (token) {
+    try {
+      sessionStorage.setItem("d3_staff_token", token);
+      localStorage.setItem("d3_staff_token", token);
+    } catch {}
+  } else {
+    try {
+      sessionStorage.removeItem("d3_staff_token");
+      localStorage.removeItem("d3_staff_token");
+    } catch {}
+  }
+}
+
+export function getStaffToken(): string | null {
+  if (activeStaffToken) return activeStaffToken;
+  try {
+    activeStaffToken =
+      sessionStorage.getItem("d3_staff_token") || localStorage.getItem("d3_staff_token");
+  } catch {}
+  return activeStaffToken;
+}
+
+export function clearStaffToken() {
+  setStaffToken(null);
+}
+
+// Backward compatibility aliases
+export const setAuthToken = setCustomerToken;
+export const getAuthToken = getCustomerToken;
+export const clearAuthToken = clearCustomerToken;
 
 async function apiRequest<T>(path: string, options: RequestOptions = {}): Promise<T> {
-  const token = getAuthToken();
+  const isStaffPath = path.startsWith("/api/admin");
+  const token = isStaffPath ? getStaffToken() : getCustomerToken();
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
     ...(token ? { Authorization: `Bearer ${token}` } : {}),

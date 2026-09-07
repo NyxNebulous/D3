@@ -1,6 +1,12 @@
 import "@testing-library/jest-dom/vitest";
+import { cleanup } from "@testing-library/react";
+import { afterEach } from "vitest";
 
-class LocalStorageMock implements Storage {
+afterEach(() => {
+  cleanup();
+});
+
+class StorageMock implements Storage {
   private store: Record<string, string> = {};
 
   get length(): number {
@@ -29,13 +35,24 @@ class LocalStorageMock implements Storage {
 }
 
 if (typeof window !== "undefined") {
-  const mock = new LocalStorageMock();
+  const localMock = new StorageMock();
+  const sessionMock = new StorageMock();
+
   Object.defineProperty(window, "localStorage", {
-    value: mock,
+    value: localMock,
     writable: true
   });
   Object.defineProperty(globalThis, "localStorage", {
-    value: mock,
+    value: localMock,
+    writable: true
+  });
+
+  Object.defineProperty(window, "sessionStorage", {
+    value: sessionMock,
+    writable: true
+  });
+  Object.defineProperty(globalThis, "sessionStorage", {
+    value: sessionMock,
     writable: true
   });
 }

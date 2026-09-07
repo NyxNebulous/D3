@@ -67,7 +67,11 @@ export function createHonoApp(injectedEnv?: Partial<Env>) {
           origin.endsWith(".pages.dev") ||
           origin.includes("localhost") ||
           origin.includes("127.0.0.1") ||
-          origin === allowedOrigin
+          origin === allowedOrigin ||
+          (c.env.NODE_ENV === "development" &&
+            /^https?:\/\/(192\.168\.\d+\.\d+|10\.\d+\.\d+\.\d+|172\.(1[6-9]|2\d|3[0-1])\.\d+\.\d+)(:\d+)?$/.test(
+              origin
+            ))
         ) {
           return origin;
         }
@@ -97,7 +101,10 @@ export function createHonoApp(injectedEnv?: Partial<Env>) {
   // Helper for cookie options respecting secure flag
   function getCookieOptions(c: any, maxAgeSeconds: number) {
     const isProduction = c.env.NODE_ENV === "production";
-    const secureCookies = isProduction || c.env.NODE_ENV !== "development";
+    const secureCookies =
+      c.env.D3_SECURE_COOKIES !== undefined
+        ? Boolean(c.env.D3_SECURE_COOKIES)
+        : isProduction || c.env.NODE_ENV !== "development";
 
     return {
       httpOnly: true,
@@ -110,7 +117,10 @@ export function createHonoApp(injectedEnv?: Partial<Env>) {
 
   function clearCookie(c: any, cookieName: string) {
     const isProduction = c.env.NODE_ENV === "production";
-    const secureCookies = isProduction || c.env.NODE_ENV !== "development";
+    const secureCookies =
+      c.env.D3_SECURE_COOKIES !== undefined
+        ? Boolean(c.env.D3_SECURE_COOKIES)
+        : isProduction || c.env.NODE_ENV !== "development";
     deleteCookie(c, cookieName, {
       path: "/",
       secure: secureCookies,
@@ -606,7 +616,15 @@ export function createHonoApp(injectedEnv?: Partial<Env>) {
     });
   });
 
-  app.post("/api/admin/logout", (c) => {
+  app.post("/api/admin/logout", async (c) => {
+    const token = getAuthTokenFromContext(c, STAFF_SESSION_COOKIE);
+    if (token) {
+      await c.env.D3_DB
+        .prepare(`DELETE FROM staff_sessions WHERE token_hash = ?`)
+        .bind(hashToken(token))
+        .run()
+        .catch(() => {});
+    }
     clearCookie(c, STAFF_SESSION_COOKIE);
     return c.json({ success: true });
   });

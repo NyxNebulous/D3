@@ -4,6 +4,8 @@ import {
   apiGet,
   apiPatch,
   apiPost,
+  clearStaffToken,
+  setStaffToken,
   type MenuCategory,
   type MenuItem,
   type Order
@@ -23,6 +25,7 @@ type StaffSession = {
     id: number;
     username: string;
   };
+  token?: string;
 };
 
 type NoticeState = {
@@ -90,6 +93,8 @@ export function AdminPage() {
         await loadAdminData();
       } catch {
         // unauthenticated staff stays on login
+        clearStaffToken();
+        setStaff(null);
       }
     }
 
@@ -113,8 +118,11 @@ export function AdminPage() {
       try {
         const response = await apiGet<{ orders: Order[] }>("/api/admin/orders");
         setOrders(response.orders);
-      } catch {
-        // Silent catch for background poll
+      } catch (err) {
+        if (err instanceof Error && err.message.toLowerCase().includes("unauthenticated")) {
+          clearStaffToken();
+          setStaff(null);
+        }
       }
     }
 
@@ -158,9 +166,14 @@ export function AdminPage() {
         username,
         password
       });
+      if (response.token) {
+        setStaffToken(response.token);
+      }
       setStaff(response.staff);
       await loadAdminData();
     } catch (error) {
+      clearStaffToken();
+      setStaff(null);
       setNotice({
         variant: "error",
         title: "Login failed",
@@ -177,6 +190,7 @@ export function AdminPage() {
     } catch {
       // ignore
     }
+    clearStaffToken();
     setStaff(null);
   }
 
