@@ -11,7 +11,7 @@ const booleanFromEnv = z.preprocess((value) => {
 const envSchema = z.object({
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
   PORT: z.coerce.number().int().positive().default(4000),
-  D3_DATABASE_PATH: z.string().min(1).default("data/d3.sqlite"),
+  DATABASE_URL: z.string().url().default("postgres://postgres@localhost:5432/d3"),
   D3_CORS_ORIGIN: z.string().url().default("http://localhost:5173"),
   D3_REQUEST_BODY_LIMIT: z.string().min(1).default("32kb"),
   HMAC_SECRET: z.string().min(32),
@@ -30,7 +30,7 @@ const envSchema = z.object({
 export type AppConfig = {
   nodeEnv: "development" | "test" | "production";
   port: number;
-  databasePath: string;
+  databaseUrl: string;
   corsOrigin: string;
   requestBodyLimit: string;
   qrSecret: string;
@@ -52,7 +52,7 @@ export function loadConfig(source: NodeJS.ProcessEnv = process.env): AppConfig {
   return {
     nodeEnv: parsed.NODE_ENV,
     port: parsed.PORT,
-    databasePath: parsed.D3_DATABASE_PATH,
+    databaseUrl: parsed.DATABASE_URL,
     corsOrigin: parsed.D3_CORS_ORIGIN,
     requestBodyLimit: parsed.D3_REQUEST_BODY_LIMIT,
     qrSecret: parsed.HMAC_SECRET,
@@ -73,7 +73,7 @@ export function createTestConfig(overrides: Partial<AppConfig> = {}): AppConfig 
   return {
     nodeEnv: "test",
     port: 0,
-    databasePath: ":memory:",
+    databaseUrl: "postgres://postgres@localhost:5432/d3_test",
     corsOrigin: "http://localhost:5173",
     requestBodyLimit: "32kb",
     // Test-only fake secrets — never use these values outside of automated tests.

@@ -1,16 +1,20 @@
 import { serve } from "@hono/node-server";
 import { createHonoApp } from "../app.js";
 import { loadConfig } from "../config/env.js";
-import { openDatabase, createSqliteD1Adapter } from "../db/database.js";
-import { runMigrations } from "../db/migrations.js";
-import { ensureDevSeed } from "../db/seed.js";
+import { createPostgresD1Adapter, openPostgres } from "../db/database.js";
+import { runPostgresMigrations } from "../db/migrations.js";
+import { ensurePostgresDevSeed } from "../db/seed.js";
 
 const config = loadConfig();
-const database = openDatabase(config.databasePath);
-runMigrations(database);
+if (!config.databaseUrl) {
+  throw new Error("DATABASE_URL is required to start the API");
+}
 
-const devSeed = ensureDevSeed(database, config);
-const d1Database = createSqliteD1Adapter(database);
+const database = await openPostgres(config.databaseUrl);
+await runPostgresMigrations(database);
+
+const devSeed = await ensurePostgresDevSeed(database, config);
+const d1Database = createPostgresD1Adapter(database);
 
 const app = createHonoApp({
   D3_DB: d1Database,

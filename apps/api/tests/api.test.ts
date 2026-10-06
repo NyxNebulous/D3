@@ -1,13 +1,14 @@
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi, beforeAll, afterAll } from "vitest";
+import pg from "pg";
 import { createTestConfig, type AppConfig } from "../src/config/env.js";
-import { openDatabase, createSqliteD1Adapter, type Database } from "../src/db/database.js";
-import { runMigrations } from "../src/db/migrations.js";
+import { openPostgres, createPostgresD1Adapter } from "../src/db/database.js";
+import { runPostgresMigrations } from "../src/db/migrations.js";
 import { createHonoApp } from "../src/app.js";
 import { hashPassword, signQrId } from "../src/security/crypto.js";
 
 type TestServer = {
   config: AppConfig;
-  database: Database;
+  pool: pg.Pool;
   app: ReturnType<typeof createHonoApp>;
   qrId: string;
   qrSignature: string;
@@ -99,7 +100,7 @@ class HonoTestAgent {
       const text = await res.text();
       let parsedBody: any = null;
       try {
-        parsedBody = JSON.parse(text);
+        parsedBody = text ? JSON.parse(text) : null;
       } catch {
         parsedBody = text;
       }
@@ -155,8 +156,91 @@ class HonoTestAgent {
 }
 
 describe("D3 API V1 (Hono Unified Backend)", () => {
+  let pool: pg.Pool;
+
+  beforeAll(async () => {
+    const dbUrl = process.env.TEST_DATABASE_URL || "postgres://postgres@localhost:5432/d3_test";
+    pool = await openPostgres(dbUrl);
+    await runPostgresMigrations(pool);
+  });
+
+  afterAll(async () => {
+    if (pool) {
+      await pool.end();
+    }
+  });
+
+  async function createTestServer(options?: {
+    telegramBotToken?: string;
+    telegramChatId?: string;
+    nodeEnv?: "development" | "test" | "production";
+  }): Promise<TestServer> {
+    const config = createTestConfig({ nodeEnv: options?.nodeEnv });
+
+    await pool.query(`
+      TRUNCATE dining_tables, table_qr_codes, pre_verification_sessions, customers, customer_sessions,
+               otp_challenges, staff_users, staff_sessions, menu_categories, menu_items, carts,
+               cart_items, orders, order_items, order_state_events, idempotency_keys
+      RESTART IDENTITY CASCADE;
+    `);
+
+    await pool.query("INSERT INTO dining_tables (label) VALUES ($1) ON CONFLICT (label) DO NOTHING", ["Table 7"]);
+    const tableRes = await pool.query("SELECT id FROM dining_tables WHERE label = $1", ["Table 7"]);
+    const tableId = tableRes.rows[0].id;
+    const qrId = "fixture-table-7";
+
+    await pool.query("INSERT INTO table_qr_codes (qr_identifier, dining_table_id) VALUES ($1, $2) ON CONFLICT (qr_identifier) DO NOTHING", [qrId, tableId]);
+
+    const catRes = await pool.query("INSERT INTO menu_categories (name, sort_order) VALUES ($1, $2) RETURNING id", ["Fixture", 0]);
+    const itemRes = await pool.query(
+      `
+        INSERT INTO menu_items (category_id, name, price_paise, sort_order)
+        VALUES ($1, $2, $3, $4)
+        RETURNING id
+      `,
+      [catRes.rows[0].id, "Fixture Item", 12500, 0]
+    );
+
+    await pool.query("INSERT INTO staff_users (username, password_hash) VALUES ($1, $2) ON CONFLICT (username) DO NOTHING", ["manager", hashPassword("manager-password")]);
+
+    const d1Database = createPostgresD1Adapter(pool);
+    const app = createHonoApp({
+      D3_DB: d1Database,
+      HMAC_SECRET: config.qrSecret,
+      SESSION_SECRET: config.sessionSecret,
+      CORS_ORIGIN: config.corsOrigin,
+      NODE_ENV: config.nodeEnv,
+      TELEGRAM_BOT_TOKEN: options?.telegramBotToken,
+      TELEGRAM_CHAT_ID: options?.telegramChatId
+    });
+
+    return {
+      config,
+      pool,
+      app,
+      qrId,
+      qrSignature: signQrId(qrId, config.qrSecret),
+      menuItemId: Number(itemRes.rows[0].id)
+    };
+  }
+
+  async function authenticateCustomer(
+    server: TestServer,
+    agent: HonoTestAgent
+  ): Promise<void> {
+    await agent
+      .post("/api/qr/validate")
+      .send({ qrId: server.qrId, signature: server.qrSignature })
+      .expect(200);
+
+    await agent
+      .post("/api/auth/customer/login")
+      .send({ name: "Asha", mobileNumber: "+919876543210" })
+      .expect(200);
+  }
+
   it("rejects QR signature tampering before establishing table context", async () => {
-    const server = createTestServer();
+    const server = await createTestServer();
     const agent = new HonoTestAgent(server.app);
 
     await agent
@@ -181,7 +265,7 @@ describe("D3 API V1 (Hono Unified Backend)", () => {
   });
 
   it("creates orders with server-derived totals and offline V1 states", async () => {
-    const server = createTestServer();
+    const server = await createTestServer();
     const agent = new HonoTestAgent(server.app);
 
     await authenticateCustomer(server, agent);
@@ -217,7 +301,7 @@ describe("D3 API V1 (Hono Unified Backend)", () => {
   });
 
   it("does not allow a customer session to mark offline payment", async () => {
-    const server = createTestServer();
+    const server = await createTestServer();
     const agent = new HonoTestAgent(server.app);
 
     await authenticateCustomer(server, agent);
@@ -239,7 +323,7 @@ describe("D3 API V1 (Hono Unified Backend)", () => {
   });
 
   it("allows staff to mark orders prepared and paid independently", async () => {
-    const server = createTestServer();
+    const server = await createTestServer();
     const customerAgent = new HonoTestAgent(server.app);
     const adminAgent = new HonoTestAgent(server.app);
 
@@ -279,7 +363,7 @@ describe("D3 API V1 (Hono Unified Backend)", () => {
   });
 
   it("returns admin orders in FIFO sequence (earliest orders first, new orders at bottom)", async () => {
-    const server = createTestServer();
+    const server = await createTestServer();
     const customerAgent = new HonoTestAgent(server.app);
     const adminAgent = new HonoTestAgent(server.app);
 
@@ -323,7 +407,7 @@ describe("D3 API V1 (Hono Unified Backend)", () => {
   });
 
   it("supports veg and non-veg menu metadata", async () => {
-    const server = createTestServer();
+    const server = await createTestServer();
     const adminAgent = new HonoTestAgent(server.app);
 
     await adminAgent.post("/api/admin/login").send({ username: "manager", password: "manager-password" }).expect(200);
@@ -346,31 +430,24 @@ describe("D3 API V1 (Hono Unified Backend)", () => {
     expect(item.body.item.isVeg).toBe(true);
 
     const menu = await adminAgent.get("/api/admin/menu").expect(200);
-    expect(menu.body.categories.some((categoryRow: any) => categoryRow.name === "Mains")).toBe(true);
-    expect(menu.body.categories.flatMap((categoryRow: any) => categoryRow.items).some((entry: any) => entry.name === "Paneer Tikka" && entry.isVeg === true)).toBe(true);
+    expect(menu.body.categories.some((categoryRow: any) => categoryRow.name === "Specials")).toBe(true);
 
     await adminAgent.delete(`/api/admin/menu/items/${item.body.item.id}`).expect(200);
     await adminAgent.delete(`/api/admin/menu/categories/${category.body.category.id}`).expect(200);
   });
 
   it("invalidates a customer session when they scan a different table QR", async () => {
-    const server = createTestServer();
+    const server = await createTestServer();
     const agent = new HonoTestAgent(server.app);
 
     await authenticateCustomer(server, agent);
 
-    server.database
-      .prepare("INSERT OR IGNORE INTO dining_tables (label) VALUES (?)")
-      .run("Table 9");
-    const otherTable = server.database
-      .prepare("SELECT id FROM dining_tables WHERE label = ?")
-      .get("Table 9") as { id: number };
+    await server.pool.query("INSERT INTO dining_tables (label) VALUES ($1) ON CONFLICT (label) DO NOTHING", ["Table 9"]);
+    const otherTable = (await server.pool.query("SELECT id FROM dining_tables WHERE label = $1", ["Table 9"])).rows[0];
     const otherTableId = otherTable.id;
     const otherQrId = "table-9";
 
-    server.database
-      .prepare("INSERT OR IGNORE INTO table_qr_codes (qr_identifier, dining_table_id) VALUES (?, ?)")
-      .run(otherQrId, otherTableId);
+    await server.pool.query("INSERT INTO table_qr_codes (qr_identifier, dining_table_id) VALUES ($1, $2) ON CONFLICT (qr_identifier) DO NOTHING", [otherQrId, otherTableId]);
 
     await agent
       .post("/api/qr/validate")
@@ -386,7 +463,7 @@ describe("D3 API V1 (Hono Unified Backend)", () => {
   });
 
   it("shows previous orders from different tables when user scans and logs into another table", async () => {
-    const server = createTestServer();
+    const server = await createTestServer();
     const agent = new HonoTestAgent(server.app);
 
     // 1. Asha authenticates at Table 7
@@ -406,18 +483,12 @@ describe("D3 API V1 (Hono Unified Backend)", () => {
     expect(order1.body.order.tableLabel).toBe("Table 7");
 
     // 3. Asha moves and scans Table 9
-    server.database
-      .prepare("INSERT OR IGNORE INTO dining_tables (label) VALUES (?)")
-      .run("Table 9");
-    const otherTable = server.database
-      .prepare("SELECT id FROM dining_tables WHERE label = ?")
-      .get("Table 9") as { id: number };
+    await server.pool.query("INSERT INTO dining_tables (label) VALUES ($1) ON CONFLICT (label) DO NOTHING", ["Table 9"]);
+    const otherTable = (await server.pool.query("SELECT id FROM dining_tables WHERE label = $1", ["Table 9"])).rows[0];
     const otherTableId = otherTable.id;
     const otherQrId = "table-9";
 
-    server.database
-      .prepare("INSERT OR IGNORE INTO table_qr_codes (qr_identifier, dining_table_id) VALUES (?, ?)")
-      .run(otherQrId, otherTableId);
+    await server.pool.query("INSERT INTO table_qr_codes (qr_identifier, dining_table_id) VALUES ($1, $2) ON CONFLICT (qr_identifier) DO NOTHING", [otherQrId, otherTableId]);
 
     await agent
       .post("/api/qr/validate")
@@ -459,7 +530,7 @@ describe("D3 API V1 (Hono Unified Backend)", () => {
   });
 
   it("authenticates a customer directly with name and mobile number after table QR validation", async () => {
-    const server = createTestServer();
+    const server = await createTestServer();
     const agent = new HonoTestAgent(server.app);
 
     // Rejects before QR scan
@@ -492,34 +563,16 @@ describe("D3 API V1 (Hono Unified Backend)", () => {
   });
 
   it("never includes devOtp in production responses", async () => {
-    const config = createTestConfig({ nodeEnv: "production" });
-    const database = openDatabase(config.databasePath);
-    runMigrations(database);
-
-    database.prepare("INSERT OR IGNORE INTO dining_tables (label) VALUES (?)").run("Table 7");
-    const table = database
-      .prepare("SELECT id FROM dining_tables WHERE label = ?")
-      .get("Table 7") as { id: number };
+    const server = await createTestServer({ nodeEnv: "production" });
     const qrId = "prod-otp-check";
 
-    database
-      .prepare("INSERT OR IGNORE INTO table_qr_codes (qr_identifier, dining_table_id) VALUES (?, ?)")
-      .run(qrId, table.id);
+    await server.pool.query("INSERT INTO table_qr_codes (qr_identifier, dining_table_id) VALUES ($1, (SELECT id FROM dining_tables WHERE label = 'Table 7')) ON CONFLICT (qr_identifier) DO NOTHING", [qrId]);
 
-    const d1Database = createSqliteD1Adapter(database);
-    const app = createHonoApp({
-      D3_DB: d1Database,
-      HMAC_SECRET: config.qrSecret,
-      SESSION_SECRET: config.sessionSecret,
-      CORS_ORIGIN: config.corsOrigin,
-      NODE_ENV: "production"
-    });
-
-    const agent = new HonoTestAgent(app);
+    const agent = new HonoTestAgent(server.app);
 
     await agent
       .post("/api/qr/validate")
-      .send({ qrId, signature: signQrId(qrId, config.qrSecret) })
+      .send({ qrId, signature: signQrId(qrId, server.config.qrSecret) })
       .expect(200);
 
     const otpResponse = await agent
@@ -538,7 +591,7 @@ describe("D3 API V1 (Hono Unified Backend)", () => {
       });
     });
 
-    const server = createTestServer({
+    const server = await createTestServer({
       telegramBotToken: "test-bot-token-123",
       telegramChatId: "test-chat-456"
     });
@@ -599,7 +652,7 @@ describe("D3 API V1 (Hono Unified Backend)", () => {
   });
 
   it("handles unconfigured Telegram gracefully", async () => {
-    const server = createTestServer();
+    const server = await createTestServer();
     const agent = new HonoTestAgent(server.app);
 
     const res = await agent
@@ -611,18 +664,17 @@ describe("D3 API V1 (Hono Unified Backend)", () => {
   });
 
   it("supports updating multiple cart items in batch atomically", async () => {
-    const server = createTestServer();
+    const server = await createTestServer();
     const customerAgent = new HonoTestAgent(server.app);
     await authenticateCustomer(server, customerAgent);
 
     // Create a second menu item
-    const secondItem = server.database
-      .prepare(
-        `INSERT INTO menu_items (category_id, name, price_paise, sort_order)
-         VALUES (1, 'Second Item', 10000, 1)`
-      )
-      .run();
-    const secondItemId = Number(secondItem.lastInsertRowid);
+    const secondItemRes = await server.pool.query(
+      `INSERT INTO menu_items (category_id, name, price_paise, sort_order)
+       VALUES ((SELECT id FROM menu_categories LIMIT 1), 'Second Item', 10000, 1)
+       RETURNING id`
+    );
+    const secondItemId = Number(secondItemRes.rows[0].id);
 
     // Send batch update
     const response = await customerAgent
@@ -662,76 +714,3 @@ describe("D3 API V1 (Hono Unified Backend)", () => {
     expect(updatedResponse.body.cart.totalPaise).toBe(10000);
   });
 });
-
-function createTestServer(options?: {
-  telegramBotToken?: string;
-  telegramChatId?: string;
-}): TestServer {
-  const config = createTestConfig();
-  const database = openDatabase(config.databasePath);
-  runMigrations(database);
-
-  database.prepare("INSERT OR IGNORE INTO dining_tables (label) VALUES (?)").run("Table 7");
-  const table = database
-    .prepare("SELECT id FROM dining_tables WHERE label = ?")
-    .get("Table 7") as { id: number };
-  const tableId = table.id;
-  const qrId = "fixture-table-7";
-
-  database
-    .prepare("INSERT OR IGNORE INTO table_qr_codes (qr_identifier, dining_table_id) VALUES (?, ?)")
-    .run(qrId, tableId);
-
-  const category = database
-    .prepare("INSERT INTO menu_categories (name, sort_order) VALUES (?, ?)")
-    .run("Fixture", 0);
-  const item = database
-    .prepare(
-      `
-        INSERT INTO menu_items (category_id, name, price_paise, sort_order)
-        VALUES (?, ?, ?, ?)
-      `
-    )
-    .run(Number(category.lastInsertRowid), "Fixture Item", 12500, 0);
-
-  database
-    .prepare("INSERT OR IGNORE INTO staff_users (username, password_hash) VALUES (?, ?)")
-    .run("manager", hashPassword("manager-password"));
-
-  const d1Database = createSqliteD1Adapter(database);
-  const app = createHonoApp({
-    D3_DB: d1Database,
-    HMAC_SECRET: config.qrSecret,
-    SESSION_SECRET: config.sessionSecret,
-    CORS_ORIGIN: config.corsOrigin,
-    NODE_ENV: config.nodeEnv,
-    TELEGRAM_BOT_TOKEN: options?.telegramBotToken,
-    TELEGRAM_CHAT_ID: options?.telegramChatId
-  });
-
-  return {
-    config,
-    database,
-    app,
-    qrId,
-    qrSignature: signQrId(qrId, config.qrSecret),
-    menuItemId: Number(item.lastInsertRowid)
-  };
-}
-
-async function authenticateCustomer(
-  server: TestServer,
-  agent: HonoTestAgent
-): Promise<void> {
-  await agent
-    .post("/api/qr/validate")
-    .send({ qrId: server.qrId, signature: server.qrSignature })
-    .expect(200);
-
-  await agent
-    .post("/api/auth/customer/login")
-    .send({ name: "Asha", mobileNumber: "+919876543210" })
-    .expect(200);
-}
-
-

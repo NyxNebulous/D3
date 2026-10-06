@@ -2,7 +2,7 @@
 
 D3 is a mobile-first restaurant ordering system. Diners scan a table QR code, browse the menu, build a cart, and place an order. Staff use the admin portal to manage the menu, review orders, record offline payment, and mark orders complete.
 
-This repository is a working TypeScript monorepo with a React frontend, Hono API, local SQLite development support, Cloudflare D1 production support, shared validation schemas, signed QR links, customer sessions, staff sessions, and automated tests.
+This repository is a working TypeScript monorepo with a React frontend, Hono API, PostgreSQL development support, Cloudflare D1 production support, shared validation schemas, signed QR links, customer sessions, staff sessions, and automated tests.
 
 ## Implemented Features
 
@@ -12,7 +12,7 @@ This repository is a working TypeScript monorepo with a React frontend, Hono API
 - Order creation, customer order history, and fulfillment status.
 - Staff login, protected admin operations, and menu management.
 - Offline payment and order-completion state transitions.
-- Local SQLite and Cloudflare D1 database adapters.
+- PostgreSQL and Cloudflare D1 database adapters.
 - QR image generation through `genQr.sh`.
 
 Online payments, refunds, inventory, modifiers, and complex role-based access control are outside the current V1 implementation.
@@ -33,7 +33,7 @@ qrs/                      Generated QR images; ignored by Git
 genQr.sh                  Generate all signed QR PNGs
 ```
 
-The web app runs on Vite and React. During local development, Vite serves port `5173` and proxies `/api` to the API on port `4000`. The API runs on Node.js with SQLite locally and as a Cloudflare Worker with D1 in production. The API is authoritative for table identity, sessions, prices, totals, order ownership, payment state, and fulfillment state.
+The web app runs on Vite and React. During local development, Vite serves port `5173` and proxies `/api` to the API on port `4000`. The API runs on Node.js with PostgreSQL locally and as a Cloudflare Worker with D1 in production. The API is authoritative for table identity, sessions, prices, totals, order ownership, payment state, and fulfillment state.
 
 ## Prerequisites
 
@@ -60,7 +60,7 @@ Create a root `.env` file. It is ignored by Git and must never be committed:
 ```dotenv
 NODE_ENV=development
 PORT=4000
-D3_DATABASE_PATH=data/d3.sqlite
+DATABASE_URL=postgres://postgres@localhost:5432/d3
 D3_CORS_ORIGIN=http://localhost:5173
 D3_REQUEST_BODY_LIMIT=32kb
 HMAC_SECRET=<at-least-32-character-QR-signing-secret>
@@ -92,7 +92,7 @@ npm run dev:web
 
 Open `http://localhost:5173`. API health checks are available at `http://localhost:4000/health` and `http://localhost:4000/api/health`.
 
-The local server applies migrations to `D3_DATABASE_PATH`. Local database files under `apps/api/data/` are ignored by Git.
+The local server connects to PostgreSQL via `DATABASE_URL` and applies migrations automatically.
 
 ## QR Codes
 
@@ -110,7 +110,7 @@ The output is written as `qrs/table-1.png`, `qrs/table-2.png`, and so on. Use `T
 
 The schema covers dining tables and QR identities, customer and staff sessions, OTP challenges, menu categories and items, carts, orders, order items, state events, and idempotency keys.
 
-Local migrations run automatically from `apps/api/migrations/*.sql` when the API starts. For Cloudflare D1:
+PostgreSQL migrations run automatically from `apps/api/migrations/*.sql` when the API starts with `DATABASE_URL` configured. For Cloudflare D1:
 
 ```bash
 npx wrangler d1 migrations apply D3_DB --remote \

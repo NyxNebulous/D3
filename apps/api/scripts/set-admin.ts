@@ -1,6 +1,3 @@
-import { existsSync } from "node:fs";
-import { resolve } from "node:path";
-import { DatabaseSync } from "node:sqlite";
 import { spawnSync } from "node:child_process";
 import { hashPassword } from "../src/security/crypto.js";
 
@@ -16,12 +13,12 @@ const newPassword = cleanArgs[1];
 if (!newPassword) {
   console.log("\n=======================================================");
   console.log("             D3 ADMIN CREDENTIALS MANAGER              ");
-  console.log("=======================================================\n");
+  console.log("=======================================================");
   console.log("Usage:");
   console.log("  npx tsx scripts/set-admin.ts <username> <new_password> [--local | --remote]\n");
   console.log("Examples:");
   console.log("  npm run set-admin -- admin 2026            (updates both local & remote)");
-  console.log("  npm run set-admin -- admin 2026 --local    (updates local SQLite only)");
+  console.log("  npm run set-admin -- admin 2026 --local    (updates local PostgreSQL only)");
   console.log("  npm run set-admin -- admin 2026 --remote   (updates Cloudflare D1 only)\n");
   process.exit(1);
 }
@@ -36,29 +33,24 @@ console.log(`Hash Format: ${passwordHash.split("$")[0]}`);
 console.log(`Hash Salt  : ${passwordHash.split("$")[1]}`);
 console.log("-------------------------------------------------------\n");
 
-// 1. Update Local SQLite Database
+// 1. Update PostgreSQL Database (if DATABASE_URL is set)
+const databaseUrl = process.env.DATABASE_URL || "postgres://postgres@localhost:5432/d3";
 if (hasLocal || doBoth) {
-  const possiblePaths = [
-    resolve(process.cwd(), "data/d3.sqlite"),
-    resolve(process.cwd(), "apps/api/data/d3.sqlite"),
-    resolve(import.meta.dirname, "../data/d3.sqlite")
-  ];
-  const localDbPath = possiblePaths.find((p) => existsSync(p));
-
-  if (localDbPath) {
-    try {
-      const db = new DatabaseSync(localDbPath);
-      db.prepare(`
+  try {
+    const { default: pg } = await import("pg");
+    const pool = new pg.Pool({ connectionString: databaseUrl });
+    await pool.query(
+      `
         INSERT INTO staff_users (id, username, password_hash)
-        VALUES (1, ?, ?)
-        ON CONFLICT(id) DO UPDATE SET username = excluded.username, password_hash = excluded.password_hash
-      `).run(newUsername, passwordHash);
-      console.log(`✅ Local SQLite Database updated: ${localDbPath}`);
-    } catch (err) {
-      console.error(`❌ Failed to update local SQLite database:`, err);
-    }
-  } else {
-    console.log(`ℹ️  No local data/d3.sqlite found to update.`);
+        VALUES (1, $1, $2)
+        ON CONFLICT (id) DO UPDATE SET username = EXCLUDED.username, password_hash = EXCLUDED.password_hash
+      `,
+      [newUsername, passwordHash]
+    );
+    await pool.end();
+    console.log(`✅ PostgreSQL Database updated: ${databaseUrl}`);
+  } catch (err: any) {
+    console.log(`ℹ️  PostgreSQL update skipped or failed (${err.message})`);
   }
 }
 
